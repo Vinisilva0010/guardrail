@@ -19,6 +19,8 @@ from tenacity import (
     wait_exponential,
 )
 
+from guardrail.collectors.errors import UpstreamDataError
+
 log = structlog.get_logger(__name__)
 
 BASE_URL: Final = "https://api.binance.com"
@@ -28,13 +30,6 @@ KLINES_PATH: Final = "/api/v3/klines"
 MAX_LIMIT: Final = 1000
 
 SUPPORTED_INTERVALS: Final = frozenset({"1h", "4h", "1d"})
-
-
-class UpstreamDataError(ValueError):
-    """The response was well-formed HTTP but the payload is unusable.
-
-    Raised instead of a retryable error: re-requesting bad data returns bad data.
-    """
 
 
 class Kline(BaseModel):
