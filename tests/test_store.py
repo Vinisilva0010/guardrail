@@ -19,6 +19,7 @@ from guardrail.collectors.store import (
     store_klines,
 )
 from guardrail.db.models import AssetClass, Candle, SourceHealth
+from tests.constants import TEST_SYMBOL, TEST_VENUE
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -45,15 +46,19 @@ def _count_candles(session: Session, instrument_id: int) -> int:
 
 
 def test_instrument_is_not_duplicated(session: Session) -> None:
-    first = get_or_create_instrument(session, "BTCUSDT", "binance", AssetClass.CRYPTO)
-    second = get_or_create_instrument(session, "BTCUSDT", "binance", AssetClass.CRYPTO)
+    first = get_or_create_instrument(
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
+    )
+    second = get_or_create_instrument(
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
+    )
 
     assert first.id == second.id
 
 
 def test_stores_klines(session: Session) -> None:
     instrument = get_or_create_instrument(
-        session, "BTCUSDT", "binance", AssetClass.CRYPTO
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
     )
     klines = [_kline(i) for i in range(5)]
 
@@ -66,7 +71,7 @@ def test_stores_klines(session: Session) -> None:
 def test_rerun_inserts_nothing_and_does_not_raise(session: Session) -> None:
     """The core idempotency guarantee: a repeated run is a no-op."""
     instrument = get_or_create_instrument(
-        session, "BTCUSDT", "binance", AssetClass.CRYPTO
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
     )
     klines = [_kline(i) for i in range(5)]
     store_klines(session, instrument.id, "1h", klines)
@@ -80,7 +85,7 @@ def test_rerun_inserts_nothing_and_does_not_raise(session: Session) -> None:
 def test_partial_overlap_inserts_only_new_rows(session: Session) -> None:
     """The realistic case: a scheduled run overlapping the previous window."""
     instrument = get_or_create_instrument(
-        session, "BTCUSDT", "binance", AssetClass.CRYPTO
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
     )
     store_klines(session, instrument.id, "1h", [_kline(i) for i in range(5)])
 
@@ -94,7 +99,7 @@ def test_partial_overlap_inserts_only_new_rows(session: Session) -> None:
 
 def test_empty_batch_is_safe(session: Session) -> None:
     instrument = get_or_create_instrument(
-        session, "BTCUSDT", "binance", AssetClass.CRYPTO
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
     )
 
     assert store_klines(session, instrument.id, "1h", []) == 0
@@ -103,7 +108,7 @@ def test_empty_batch_is_safe(session: Session) -> None:
 def test_timeframes_do_not_collide(session: Session) -> None:
     """Same instrument and timestamp across timeframes must coexist."""
     instrument = get_or_create_instrument(
-        session, "BTCUSDT", "binance", AssetClass.CRYPTO
+        session, TEST_SYMBOL, TEST_VENUE, AssetClass.CRYPTO
     )
     store_klines(session, instrument.id, "1h", [_kline(0)])
     store_klines(session, instrument.id, "4h", [_kline(0)])

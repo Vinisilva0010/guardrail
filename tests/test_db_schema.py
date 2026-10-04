@@ -14,13 +14,14 @@ from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from guardrail.db.models import AssetClass, Candle, Catalyst, Instrument
+from tests.constants import TEST_SYMBOL, TEST_VENUE
 
 TS = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
-def _instrument(session: Session, symbol: str = "BTCUSDT") -> Instrument:
+def _instrument(session: Session, symbol: str = TEST_SYMBOL) -> Instrument:
     instrument = Instrument(
-        symbol=symbol, venue="binance", asset_class=AssetClass.CRYPTO
+        symbol=symbol, venue=TEST_VENUE, asset_class=AssetClass.CRYPTO
     )
     session.add(instrument)
     session.flush()
@@ -47,7 +48,7 @@ def test_enum_rejects_uppercase_literal(session: Session) -> None:
         session.execute(
             text(
                 "INSERT INTO instrument (symbol, venue, asset_class) "
-                "VALUES ('ETHUSDT', 'binance', 'CRYPTO')"
+                "VALUES ('TESTCOIN2', 'test-venue', 'CRYPTO')"
             )
         )
 
