@@ -185,6 +185,41 @@ class Catalyst(Base):
     dedupe_key: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class UniverseMembership(Base):
+    """Which instruments belonged to the tradable universe, and when.
+
+    Point-in-time by design. Backtesting a setup against today's universe would
+    only include instruments that survived to today: the ones that were delisted
+    or lost liquidity disappear from the sample, and every strategy looks better
+    than it is. The engine asks "who was in the universe on this date" instead.
+
+    threshold_usd is stored per row so a later backtest can tell whether a result
+    came from a different cut.
+    """
+
+    __tablename__ = "universe_membership"
+    __table_args__ = (
+        Index("ix_universe_membership_entered_exited", "entered_on", "exited_on"),
+        CheckConstraint(
+            "exited_on IS NULL OR exited_on > entered_on", name="exit_after_entry"
+        ),
+        CheckConstraint("median_dollar_volume >= 0", name="volume_non_negative"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), nullable=False
+    )
+    entered_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    exited_on: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    median_dollar_volume: Mapped[Decimal] = mapped_column(PRICE, nullable=False)
+    threshold_usd: Mapped[Decimal] = mapped_column(PRICE, nullable=False)
+
+
 class SourceHealth(Base):
     """Last known state of each ingestion source.
 
