@@ -17,8 +17,8 @@ from guardrail.collectors.binance import (
     KLINES_PATH,
     BinanceClient,
     Kline,
-    UpstreamDataError,
 )
+from guardrail.collectors.errors import UpstreamDataError
 
 URL = f"{BASE_URL}{KLINES_PATH}"
 START = datetime(2026, 1, 1, tzinfo=UTC)

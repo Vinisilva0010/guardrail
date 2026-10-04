@@ -9,12 +9,19 @@ from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from guardrail.collectors.binance import Kline
-from guardrail.db.models import AssetClass, Candle, Instrument, SourceHealth
+from guardrail.collectors.binance_vision import MetricRow
+from guardrail.db.models import (
+    AssetClass,
+    Candle,
+    DerivativeStat,
+    Instrument,
+    SourceHealth,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -147,3 +154,69 @@ def record_failure(session: Session, source: str, error: str) -> None:
         )
     )
     session.execute(statement)
+
+
+def store_metrics(
+    session: Session,
+    instrument_id: int,
+    rows: Iterable[MetricRow],
+) -> int:
+    """Insert derivative metrics, filling gaps left by other sources.
+
+    Unlike candles, the same timestamp can legitimately arrive from two sources:
+    the Binance Vision dump, which carries the positioning ratios, and the REST
+    endpoint, which carries open interest only. DO NOTHING would permanently drop
+    the ratios whenever the REST collector happened to write first.
+
+    COALESCE on every column means each source fills what the other lacked and
+    neither can overwrite a value already present.
+    """
+    values: list[dict[str, object]] = [
+        {
+            "instrument_id": instrument_id,
+            "ts": row.ts,
+            "open_interest": row.open_interest,
+            "open_interest_value": row.open_interest_value,
+            "toptrader_long_short_account_ratio": (
+                row.toptrader_long_short_account_ratio
+            ),
+            "toptrader_long_short_position_ratio": (
+                row.toptrader_long_short_position_ratio
+            ),
+            "taker_long_short_volume_ratio": row.taker_long_short_volume_ratio,
+        }
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    fillable = (
+        "open_interest",
+        "open_interest_value",
+        "toptrader_long_short_account_ratio",
+        "toptrader_long_short_position_ratio",
+        "taker_long_short_volume_ratio",
+    )
+
+    written = 0
+    for chunk in _chunks(values, BATCH_SIZE):
+        insert_stmt = pg_insert(DerivativeStat).values(chunk)
+        statement = insert_stmt.on_conflict_do_update(
+            index_elements=["instrument_id", "ts"],
+            set_={
+                column: func.coalesce(
+                    getattr(DerivativeStat, column),
+                    getattr(insert_stmt.excluded, column),
+                )
+                for column in fillable
+            },
+        ).returning(DerivativeStat.ts)
+        written += len(session.execute(statement).fetchall())
+
+    log.info(
+        "metrics.stored",
+        instrument_id=instrument_id,
+        submitted=len(values),
+        written=written,
+    )
+    return written

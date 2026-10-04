@@ -63,7 +63,10 @@ select = [
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src"]
+# Tests are checked as well: a test constructing an object with a type its
+# dataclass forbids is exactly the kind of silent lie that makes a suite
+# pass while proving nothing.
+files = ["src", "tests"]
 strict = true
 warn_unreachable = true
 plugins = []

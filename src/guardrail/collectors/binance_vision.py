@@ -56,9 +56,12 @@ class MetricRow:
     ts: datetime
     open_interest: Decimal
     open_interest_value: Decimal
-    toptrader_long_short_account_ratio: Decimal
-    toptrader_long_short_position_ratio: Decimal
-    taker_long_short_volume_ratio: Decimal
+
+    # Optional because the REST endpoint for the recent window returns open
+    # interest only. Rows parsed from a Vision dump always carry all three.
+    toptrader_long_short_account_ratio: Decimal | None
+    toptrader_long_short_position_ratio: Decimal | None
+    taker_long_short_volume_ratio: Decimal | None
 
 
 def _parse_decimal(raw: str, field: str) -> Decimal:
