@@ -56,23 +56,9 @@ class AssetClass(enum.StrEnum):
     EQUITY = "equity"
 
 
-class Side(enum.StrEnum):
-    """Direction of a liquidated position."""
-
-    LONG = "long"
-    SHORT = "short"
-
-
 ASSET_CLASS_ENUM = Enum(
     AssetClass,
     name="asset_class",
-    native_enum=True,
-    values_callable=_enum_values,
-)
-
-LIQUIDATION_SIDE_ENUM = Enum(
-    Side,
-    name="liquidation_side",
     native_enum=True,
     values_callable=_enum_values,
 )
@@ -143,26 +129,21 @@ class DerivativeStat(Base):
 
     funding_rate: Mapped[Decimal | None] = mapped_column(RATE, nullable=True)
     open_interest: Mapped[Decimal | None] = mapped_column(QTY, nullable=True)
+    open_interest_value: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
     mark_price: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
 
-
-class Liquidation(Base):
-    """A single forced liquidation reported by the venue."""
-
-    __tablename__ = "liquidation"
-    __table_args__ = (
-        Index("ix_liquidation_instrument_id_ts", "instrument_id", "ts"),
-        CheckConstraint("quantity > 0", name="quantity_positive"),
+    # Positioning ratios, present only in the Binance Vision daily dumps. The
+    # REST endpoint does not return them, so rows written from the recent-window
+    # collector leave these null. They are backtest candidates, not setup inputs.
+    toptrader_long_short_account_ratio: Mapped[Decimal | None] = mapped_column(
+        RATE, nullable=True
     )
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    instrument_id: Mapped[int] = mapped_column(
-        ForeignKey("instrument.id", ondelete="CASCADE"), nullable=False
+    toptrader_long_short_position_ratio: Mapped[Decimal | None] = mapped_column(
+        RATE, nullable=True
     )
-    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    side: Mapped[Side] = mapped_column(LIQUIDATION_SIDE_ENUM, nullable=False)
-    quantity: Mapped[Decimal] = mapped_column(QTY, nullable=False)
-    price: Mapped[Decimal] = mapped_column(PRICE, nullable=False)
+    taker_long_short_volume_ratio: Mapped[Decimal | None] = mapped_column(
+        RATE, nullable=True
+    )
 
 
 class Catalyst(Base):
