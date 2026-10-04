@@ -204,3 +204,25 @@ class AlpacaClient:
             bars=sum(len(v) for v in out.values()),
         )
         return out
+
+    async def fetch_corporate_actions(
+        self, symbols: list[str], start: date, end: date
+    ) -> dict[str, Any]:
+        """Return the raw corporate-actions payload for a batch of symbols.
+
+        Returned unparsed: the response groups events by type and each type has
+        its own field names, so normalising belongs with the caller that knows
+        which types matter.
+        """
+        payload = await self._get(
+            f"{DATA_URL}/v1/corporate-actions",
+            {
+                "symbols": ",".join(symbols),
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "limit": 1000,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise UpstreamDataError(f"expected an object, got {type(payload)}")
+        return payload

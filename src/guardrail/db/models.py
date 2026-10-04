@@ -220,6 +220,59 @@ class UniverseMembership(Base):
     threshold_usd: Mapped[Decimal] = mapped_column(PRICE, nullable=False)
 
 
+class CorporateActionType(enum.StrEnum):
+    """Event types that break price continuity."""
+
+    REVERSE_SPLIT = "reverse_split"
+    FORWARD_SPLIT = "forward_split"
+    UNIT_SPLIT = "unit_split"
+    SPIN_OFF = "spin_off"
+    STOCK_MERGER = "stock_merger"
+
+
+CORPORATE_ACTION_TYPE_ENUM = Enum(
+    CorporateActionType,
+    name="corporate_action_type",
+    native_enum=True,
+    values_callable=_enum_values,
+)
+
+
+class CorporateAction(Base):
+    """A corporate action that breaks the price series.
+
+    Recorded from the venue's published events, never inferred from price. A
+    120-to-1 reverse split looks exactly like an 18x breakout in the bar data,
+    and a failed clinical trial looks exactly like a spin-off: trying to tell
+    them apart by price and volume thresholds misclassifies both. The events are
+    published, so they are fetched rather than guessed.
+
+    ratio is new shares per old share: 0.008352 for a 120-to-1 reverse split,
+    4.0 for a 4-for-1 forward split. Null where the event changes the series
+    without a single conversion factor, such as a spin-off.
+    """
+
+    __tablename__ = "corporate_action"
+    __table_args__ = (
+        UniqueConstraint("instrument_id", "effective_on", "action_type"),
+        Index("ix_corporate_action_effective_on", "effective_on"),
+        CheckConstraint("ratio IS NULL OR ratio > 0", name="ratio_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), nullable=False
+    )
+    effective_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    action_type: Mapped[CorporateActionType] = mapped_column(
+        CORPORATE_ACTION_TYPE_ENUM, nullable=False
+    )
+    ratio: Mapped[Decimal | None] = mapped_column(RATE, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class SourceHealth(Base):
     """Last known state of each ingestion source.
 
