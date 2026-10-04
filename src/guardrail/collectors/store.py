@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from guardrail.collectors.binance import Kline
 from guardrail.collectors.binance_vision import MetricRow
+from guardrail.collectors.funding import FundingRate
 from guardrail.db.models import (
     AssetClass,
     Candle,
@@ -215,6 +216,54 @@ def store_metrics(
 
     log.info(
         "metrics.stored",
+        instrument_id=instrument_id,
+        submitted=len(values),
+        written=written,
+    )
+    return written
+
+
+def store_funding(
+    session: Session,
+    instrument_id: int,
+    rows: Iterable[FundingRate],
+) -> int:
+    """Insert funding settlements into the shared derivative_stat table.
+
+    Funding settles every 8 hours while open interest samples every 5 minutes, so
+    most rows land on distinct timestamps and the rest coincide exactly on the
+    8-hour marks. COALESCE keeps whichever value is already present, so neither
+    collector can blank the other's columns regardless of write order.
+    """
+    values: list[dict[str, object]] = [
+        {
+            "instrument_id": instrument_id,
+            "ts": row.funding_time,
+            "funding_rate": row.funding_rate,
+            "mark_price": row.mark_price,
+        }
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    written = 0
+    for chunk in _chunks(values, BATCH_SIZE):
+        insert_stmt = pg_insert(DerivativeStat).values(chunk)
+        statement = insert_stmt.on_conflict_do_update(
+            index_elements=["instrument_id", "ts"],
+            set_={
+                column: func.coalesce(
+                    getattr(DerivativeStat, column),
+                    getattr(insert_stmt.excluded, column),
+                )
+                for column in ("funding_rate", "mark_price")
+            },
+        ).returning(DerivativeStat.ts)
+        written += len(session.execute(statement).fetchall())
+
+    log.info(
+        "funding.stored",
         instrument_id=instrument_id,
         submitted=len(values),
         written=written,
