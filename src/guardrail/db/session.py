@@ -32,6 +32,12 @@ def get_engine() -> Engine:
             max_overflow=5,
             pool_recycle=1800,
             future=True,
+            # Pin UTC per connection. The host server runs in a local zone, and
+            # date_trunc on a timestamptz uses the session zone: grouping by day
+            # would silently shift by the host offset, both here and in the
+            # backtest. Set on the connection so the server configuration, which
+            # serves other projects, is left untouched.
+            connect_args={"options": "-c timezone=UTC"},
         )
     return _engine
 
