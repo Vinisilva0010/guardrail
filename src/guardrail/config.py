@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
 
+    # Alpaca market data. Read-only use: the project never places orders.
+    alpaca_api_key: SecretStr
+    alpaca_api_secret: SecretStr
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
