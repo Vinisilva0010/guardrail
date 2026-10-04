@@ -138,3 +138,67 @@ def test_price_round_trips_as_exact_decimal(session: Session) -> None:
     assert stored is not None
     assert isinstance(stored.close, Decimal)
     assert stored.close == price
+
+
+def test_close_above_high_is_rejected(session: Session) -> None:
+    """A bar whose close sits outside its own range is impossible.
+
+    Without this constraint it passes every other check and reaches the backtest
+    as a plausible value.
+    """
+    instrument = _instrument(session)
+    session.add(
+        Candle(
+            instrument_id=instrument.id,
+            timeframe="1h",
+            ts=TS,
+            open=Decimal("100"),
+            high=Decimal("110"),
+            low=Decimal("90"),
+            close=Decimal("120"),
+            volume=Decimal("10"),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_open_below_low_is_rejected(session: Session) -> None:
+    instrument = _instrument(session)
+    session.add(
+        Candle(
+            instrument_id=instrument.id,
+            timeframe="1h",
+            ts=TS,
+            open=Decimal("80"),
+            high=Decimal("110"),
+            low=Decimal("90"),
+            close=Decimal("100"),
+            volume=Decimal("10"),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_zero_price_is_rejected(session: Session) -> None:
+    """Zero is a reporting gap, not a reading.
+
+    Stored, it reads as a 100% move to any drawdown calculation — the same class
+    of defect as the zero open interest the Vision parser filters out.
+    """
+    instrument = _instrument(session)
+    session.add(
+        Candle(
+            instrument_id=instrument.id,
+            timeframe="1h",
+            ts=TS,
+            open=Decimal("0"),
+            high=Decimal("0"),
+            low=Decimal("0"),
+            close=Decimal("0"),
+            volume=Decimal("10"),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()

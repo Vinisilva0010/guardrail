@@ -100,6 +100,14 @@ class Candle(Base):
         CheckConstraint("timeframe IN ('1h', '4h', '1d')", name="timeframe_allowed"),
         CheckConstraint("high >= low", name="high_ge_low"),
         CheckConstraint("volume >= 0", name="volume_non_negative"),
+        # Open and close must sit inside the bar's range. Without this, a bar
+        # with a close above its high passes every other check and reaches the
+        # backtest as a plausible value.
+        CheckConstraint("open BETWEEN low AND high", name="open_within_range"),
+        CheckConstraint("close BETWEEN low AND high", name="close_within_range"),
+        # A zero price is a reporting gap, never a reading. Storing it would read
+        # as a 100% move to any drawdown calculation.
+        CheckConstraint("low > 0", name="prices_positive"),
     )
 
     instrument_id: Mapped[int] = mapped_column(
