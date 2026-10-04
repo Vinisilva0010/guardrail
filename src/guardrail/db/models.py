@@ -97,6 +97,12 @@ class Candle(Base):
 
     __tablename__ = "candle"
     __table_args__ = (
+        # The primary key is (instrument_id, timeframe, ts). Cross-instrument
+        # scans — "20-day high for every symbol in the universe", which is what
+        # the equity setup runs daily — do not filter on instrument_id, so the
+        # planner cannot seek with that key and walks the whole index instead.
+        # This index puts the filtered columns first so those scans can seek.
+        Index("ix_candle_timeframe_ts", "timeframe", "ts"),
         CheckConstraint("timeframe IN ('1h', '4h', '1d')", name="timeframe_allowed"),
         CheckConstraint("high >= low", name="high_ge_low"),
         CheckConstraint("volume >= 0", name="volume_non_negative"),
