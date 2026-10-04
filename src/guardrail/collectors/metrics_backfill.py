@@ -35,7 +35,7 @@ ROWS_PER_DAY = 288
 
 # Concurrent downloads. Sequential would take too long over ~5300 files;
 # unbounded risks being throttled by the host.
-MAX_CONCURRENCY = 8
+MAX_CONCURRENCY = 24
 
 
 @dataclass(frozen=True)

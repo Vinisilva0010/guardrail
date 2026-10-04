@@ -140,3 +140,49 @@ def test_bad_timestamp_is_rejected() -> None:
 def test_empty_file_is_rejected() -> None:
     with pytest.raises(UpstreamDataError, match="empty metrics file"):
         parse_metrics_csv(b"")
+
+
+def test_blank_fields_become_null() -> None:
+    """Upstream publishes reporting gaps as empty columns, not as an error."""
+    body = (
+        ",".join(EXPECTED_HEADER)
+        + "\n2023-11-11 22:00:00,BTCUSDT,1000,50000,,,,0.838\n"
+    )
+
+    rows = parse_metrics_csv(body.encode())
+
+    assert len(rows) == 1
+    assert rows[0].open_interest == Decimal("1000")
+    assert rows[0].toptrader_long_short_account_ratio is None
+    assert rows[0].toptrader_long_short_position_ratio is None
+    assert rows[0].taker_long_short_volume_ratio == Decimal("0.838")
+
+
+def test_zero_open_interest_becomes_null() -> None:
+    """The real 2023-11-11 22:00 BTCUSDT row.
+
+    A perpetual with trading activity never holds zero open interest. Stored as
+    a value, this would read to the deleveraging setup as a 100% drop: a false
+    trigger written permanently into history and counted as real by the gate.
+    """
+    body = (
+        ",".join(EXPECTED_HEADER)
+        + "\n2023-11-11 22:00:00,BTCUSDT,0E-8,0E-8,,,,0.83835742\n"
+    )
+
+    rows = parse_metrics_csv(body.encode())
+
+    assert rows[0].open_interest is None
+    assert rows[0].open_interest_value is None
+
+
+def test_nonzero_open_interest_is_kept() -> None:
+    """The guard must not swallow legitimate small values."""
+    body = (
+        ",".join(EXPECTED_HEADER)
+        + "\n2026-08-01 00:00:00,BTCUSDT,0.00000001,1,1,1,1,1\n"
+    )
+
+    rows = parse_metrics_csv(body.encode())
+
+    assert rows[0].open_interest == Decimal("0.00000001")
