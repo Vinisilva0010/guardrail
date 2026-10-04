@@ -100,6 +100,18 @@ def _parse_bar(symbol: str, raw: dict[str, Any]) -> DailyBar:
     return bar
 
 
+def _traded(bar: DailyBar) -> bool:
+    """Whether the bar represents actual trading.
+
+    A zero-volume bar is a placeholder, not a price. LINE carries 201 of them
+    priced at $0.18 before it began trading at $80, and the step from the last
+    placeholder to the first real bar reads as a 449x move: the single largest
+    unexplained jump in three years of data, caused entirely by storing a price
+    at which nothing changed hands.
+    """
+    return bar.volume > 0
+
+
 def latest_available_day() -> date:
     """The most recent day the free plan will serve.
 
@@ -187,8 +199,9 @@ class AlpacaClient:
                     raise UpstreamDataError(f"expected an object, got {type(payload)}")
 
                 for symbol, raw_bars in (payload.get("bars") or {}).items():
+                    parsed = (_parse_bar(symbol, raw) for raw in raw_bars)
                     out.setdefault(symbol, []).extend(
-                        _parse_bar(symbol, raw) for raw in raw_bars
+                        bar for bar in parsed if _traded(bar)
                     )
 
                 token = payload.get("next_page_token")

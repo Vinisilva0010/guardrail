@@ -43,6 +43,22 @@ RELEVANT: Final = {
     "unit_splits": CorporateActionType.UNIT_SPLIT,
     "spin_offs": CorporateActionType.SPIN_OFF,
     "stock_mergers": CorporateActionType.STOCK_MERGER,
+    "cash_mergers": CorporateActionType.CASH_MERGER,
+}
+
+# Which field names the affected symbol, per event type. This cannot be a single
+# fallback chain: in a merger the payload carries both acquiree_symbol and
+# acquirer_symbol, and it is the acquirer whose price series breaks — the
+# acquiree often is not in the universe at all. The CORZ merger of 2024-01-24
+# lists acquiree CORZQ and acquirer CORZ, and keying on the acquiree filed the
+# event against a symbol nobody trades while CORZ kept an unexplained 45x gap.
+SYMBOL_FIELDS: Final = {
+    CorporateActionType.REVERSE_SPLIT: ("symbol",),
+    CorporateActionType.FORWARD_SPLIT: ("symbol",),
+    CorporateActionType.UNIT_SPLIT: ("new_symbol", "old_symbol", "symbol"),
+    CorporateActionType.SPIN_OFF: ("new_symbol", "source_symbol"),
+    CorporateActionType.STOCK_MERGER: ("acquirer_symbol",),
+    CorporateActionType.CASH_MERGER: ("acquirer_symbol",),
 }
 
 
@@ -91,8 +107,11 @@ def _ratio(action_type: CorporateActionType, item: dict[str, Any]) -> Decimal | 
     """
     if action_type is CorporateActionType.SPIN_OFF:
         return None
-    if action_type is CorporateActionType.STOCK_MERGER:
-        return _as_decimal(item.get("acquirer_rate"))
+    if action_type in (
+        CorporateActionType.STOCK_MERGER,
+        CorporateActionType.CASH_MERGER,
+    ):
+        return _as_decimal(item.get("acquirer_rate") or item.get("rate"))
 
     old = _as_decimal(item.get("old_rate"))
     new = _as_decimal(item.get("new_rate"))
@@ -110,11 +129,13 @@ def parse_actions(payload: dict[str, Any]) -> list[ParsedAction]:
     out: list[ParsedAction] = []
     for key, action_type in RELEVANT.items():
         for item in actions.get(key) or []:
-            symbol = (
-                item.get("symbol")
-                or item.get("source_symbol")
-                or item.get("acquiree_symbol")
-                or item.get("old_symbol")
+            symbol = next(
+                (
+                    item[field]
+                    for field in SYMBOL_FIELDS[action_type]
+                    if item.get(field)
+                ),
+                None,
             )
             effective = _effective_date(item)
             if not symbol or effective is None:

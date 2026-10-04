@@ -228,6 +228,7 @@ class CorporateActionType(enum.StrEnum):
     UNIT_SPLIT = "unit_split"
     SPIN_OFF = "spin_off"
     STOCK_MERGER = "stock_merger"
+    CASH_MERGER = "cash_merger"
 
 
 CORPORATE_ACTION_TYPE_ENUM = Enum(
