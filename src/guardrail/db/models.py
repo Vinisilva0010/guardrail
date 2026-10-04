@@ -49,14 +49,14 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [str(member.value) for member in enum_cls]
 
 
-class AssetClass(str, enum.Enum):
+class AssetClass(enum.StrEnum):
     """Market an instrument belongs to."""
 
     CRYPTO = "crypto"
     EQUITY = "equity"
 
 
-class Side(str, enum.Enum):
+class Side(enum.StrEnum):
     """Direction of a liquidated position."""
 
     LONG = "long"
