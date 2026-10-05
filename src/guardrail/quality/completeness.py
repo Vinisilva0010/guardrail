@@ -280,6 +280,15 @@ def check_row_counts(session: Session, report: Report) -> None:
         UNION ALL SELECT 'corporate_actions', count(*) FROM corporate_action
         UNION ALL SELECT 'universe_open', count(*) FROM universe_membership
           WHERE exited_on IS NULL
+        UNION ALL SELECT 'catalysts', count(*) FROM catalyst
+        UNION ALL SELECT 'symbols_without_news', count(*) FROM (
+            SELECT um.instrument_id FROM universe_membership um
+            WHERE um.exited_on IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM catalyst c
+                   WHERE c.instrument_id = um.instrument_id
+              )
+        ) t
     """
     for row in _rows(session, sql):
         report.counts[row.k] = row.v

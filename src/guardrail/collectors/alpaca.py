@@ -239,3 +239,10 @@ class AlpacaClient:
         if not isinstance(payload, dict):
             raise UpstreamDataError(f"expected an object, got {type(payload)}")
         return payload
+
+    async def fetch_news_page(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return one page of the news feed, unparsed."""
+        payload = await self._get(f"{DATA_URL}/v1beta1/news", params)
+        if not isinstance(payload, dict):
+            raise UpstreamDataError(f"expected an object, got {type(payload)}")
+        return payload
