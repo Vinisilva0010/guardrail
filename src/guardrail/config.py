@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     alpaca_api_key: SecretStr
     alpaca_api_secret: SecretStr
 
+    # brapi, for B3 data. Free tier: 15,000 requests a month, one ticker per
+    # request, three months of history, one request at a time.
+    brapi_token: SecretStr
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
