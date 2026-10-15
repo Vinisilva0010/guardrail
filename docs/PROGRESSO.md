@@ -169,3 +169,59 @@ não de `if`), migration `a93d5e7f1c46`.
 - Meio-pregão da B3 (ex.: quarta-feira de cinzas, abertura às 13h) não é coletado.
 - A tabela da cota de requisição (`api_quota`) não é usada por estes coletores porque nenhuma
   dessas fontes tem teto declarado; o agendador da Fase 5 é quem limita a cadência.
+
+## Fase 3 — Distribuição histórica
+
+Data: 2026-10-15. Critério de saída: **cumprido no código, vazio nos dados reais** (explicado
+abaixo). Portão verde.
+
+### O que foi feito
+
+- `guardrail.analysis.event_impact`: `measure` (um evento), `summarize` (estatísticas) e
+  `recompute` (reconstrói `event_impact_stat` inteira na sessão de quem chama; idempotente).
+  Comando: `uv run python -m guardrail.analysis.event_impact`.
+- Tabela `event_reference_asset` (migration `b27c40d8e915`, sobe e desce, semeada com a lista do
+  plano): os ativos de referência ficam em tabela, não no código.
+- **Teste de valor fixo** (`tests/test_event_impact.py`), com mediana, p10, p90, mediana absoluta
+  e % positivo calculados à mão no próprio teste, nos três horizontes (d1, d3 = 2×, w1 = 3×).
+  Validei o teste por **mutação**: deslocar a fórmula do quantil e trocar `>` por `>=` no limiar
+  de 8× fazem testes falharem.
+- `n < 8`: a linha é gravada com o `n` verdadeiro e `is_displayable(n)` é o único ponto que a
+  tela deve consultar (constante `MIN_SAMPLE = 8`).
+- Descontinuidade da SPEC §7.1 descarta a amostra: ação societária registrada na janela (inclusive
+  no dia-base, de propósito, o lado conservador), salto acima de 8× entre fechamentos
+  consecutivos (inclui a barra do dia do evento), código dormente há mais de 180 dias. Janela com
+  buraco de mais de 6 dias entre barras também sai, porque um retorno medido sobre uma semana
+  sem dados não é um retorno de 1 dia. Os motivos são contados no relatório.
+
+### Decisões minhas, para revisão
+
+1. **Uma amostra por (tipo, ativo, dia).** CPI e Core CPI saem no mesmo instante; contar os dois
+   dobraria uma única reação e inflaria o `n` que a tela mostra.
+2. **Escopo da amostra.** Evento sem ativo entra só se for de alto impacto e de escopo `us` ou
+   `br`. Misturar "CPI" dos EUA com índice de preços da Alemanha sob o mesmo tipo mediria nada.
+   Evento ligado a ativo (resultado de empresa) entra com qualquer impacto. `holiday` e `other`
+   ficam de fora (não são evento de preço).
+3. **Retorno como fração** (0,012 = 1,2%); `pct_positive` também (0 a 1). A tela formata.
+4. **Definição de horizonte:** base = último fechamento antes do dia do evento; alvo = 1º, 3º ou
+   5º fechamento depois do dia. Em ação, são pregões; em cripto, dias.
+5. **Quantil:** interpolação linear (tipo 7), em `Decimal`, arredondado a 8 casas.
+
+### O que falhou / está vazio
+
+- **`event_impact_stat` está vazia no banco real, e o motivo está nos dados, não no código.**
+  (a) Só há 4 eventos reais de alto impacto já vencidos (CPI de 14/10) porque nenhuma fonte traz
+  histórico de evento (ver pendência da Fase 2). (b) As velas diárias no banco acabam em
+  **03/10/2026**: os backfills não foram reexecutados desde então, então nenhum evento de
+  12–14/10 tem fechamento de referência. Ambas as causas se resolvem com tempo e com a Fase 5.
+- **Ativos de referência ausentes:** SPY, IWM, IBOV e USDBRL **não têm velas** (o universo da
+  Alpaca exclui ARCA, onde o SPY negocia; não há coletor de câmbio nem de índice). QQQ, BTC, ETH
+  e SOL existem. A recomputação lista os ausentes no relatório; não substituí nenhum (BOVA11 não
+  entra no lugar do IBOV por decisão minha: se quiser, é uma linha na tabela).
+
+### O que ficou pendente
+
+- Fonte de histórico de eventos (Fed, CPI, payroll, Copom) para sair de `n < 8`. Nesta data só
+  há uma, a FRED, e depende de chave.
+- Decidir se SPY/IWM entram por outro caminho de coleta (a Alpaca serve ETF, o filtro de universo
+  é que os exclui) e se o IBOV/USDBRL valem uma fonte.

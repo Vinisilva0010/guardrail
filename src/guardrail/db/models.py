@@ -583,3 +583,18 @@ class EventKindPattern(Base):
     pattern: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[EventKind] = mapped_column(EVENT_KIND_ENUM, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class EventReferenceAsset(Base):
+    """Assets a market-wide event is measured against (BTC, QQQ, ...).
+
+    A table, not a list in code (PLANO §4). A row may name an asset that has no
+    candles yet; the analysis reports it as absent instead of dropping it.
+    """
+
+    __tablename__ = "event_reference_asset"
+    __table_args__ = (UniqueConstraint("venue", "symbol"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    venue: Mapped[str] = mapped_column(String(32), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
