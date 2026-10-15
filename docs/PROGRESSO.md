@@ -438,3 +438,12 @@ minuto, `open_interest` disparou sozinho às 02:55 UTC (180 linhas), o disjuntor
 da versão antiga da auditoria sem derrubar o processo, e SIGTERM encerrou limpo. Não cheguei a
 observar o cron das 03:02 nem a reinício comparando contagens; as 24 h seguem **não verificadas**.
 Os testes de reinício e de idempotência dos coletores existem por coletor, não pelo processo.
+
+### Reinício do agendador (verificado depois, 2026-10-15 04:11 UTC)
+
+Daemon real subido duas vezes com SIGTERM entre as subidas. Na primeira partida, passada mais de
+uma hora, o catch-up rodou só o que estava velho (notícias, temas, open interest, velas 1h, alertas,
+auditoria) e todas as tarefas terminaram `ok`; a auditoria agora conclui e aponta apenas
+`brapi.b3` (última coleta 05/10). Na segunda partida o catch-up foi só `klines_1h`, `alerts` e
+`audit`; contagens antes e depois do reinício iguais, `identity_key` duplicada = 0, cota da brapi
+parada em 1.081. O teste de 24 h continua não verificado.
