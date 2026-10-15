@@ -598,3 +598,34 @@ class EventReferenceAsset(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     venue: Mapped[str] = mapped_column(String(32), nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class AlertSent(Base):
+    """An alert already delivered. The key makes a repeat impossible.
+
+    The key names what the alert is about (an event and a threshold, a stock and a
+    day, a source and its last good run), so the same condition seen on the next
+    scheduler pass does not send a second message.
+    """
+
+    __tablename__ = "alert_sent"
+
+    dedupe_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class Watchlist(Base):
+    """Instruments the operator watches. The volume alert reads this."""
+
+    __tablename__ = "watchlist"
+
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), primary_key=True
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

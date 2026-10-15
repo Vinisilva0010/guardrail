@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # request, three months of history, one request at a time.
     brapi_token: SecretStr
 
+    # Telegram alerts. Optional: without both, the alert job does nothing and the
+    # header says so. The bot only sends; it receives no commands and has no webhook.
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

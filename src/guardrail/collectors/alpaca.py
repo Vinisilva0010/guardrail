@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Final
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -23,6 +24,7 @@ from guardrail.config import get_settings
 
 log = structlog.get_logger(__name__)
 
+NEW_YORK: Final = ZoneInfo("America/New_York")
 DATA_URL: Final = "https://data.alpaca.markets"
 TRADING_URL: Final = "https://paper-api.alpaca.markets"
 
@@ -112,14 +114,18 @@ def _traded(bar: DailyBar) -> bool:
     return bar.volume > 0
 
 
-def latest_available_day() -> date:
+def latest_available_day(now: datetime | None = None) -> date:
     """The most recent day the free plan will serve.
 
-    Requesting through today returns 403 "subscription does not permit querying
-    recent SIP data". Irrelevant to the strategy: the equity setup reads daily
-    closes and runs in the morning on the prior session.
+    Requesting through the current trading day returns 403 "subscription does not
+    permit querying recent SIP data". "Current" is the New York date, not the UTC
+    one: at 20:40 UTC the UTC date has already moved on while New York is still
+    on the same session, and asking for it is refused. Irrelevant to the
+    strategy: the equity setup reads daily closes and runs in the morning on the
+    prior session.
     """
-    return datetime.now(UTC).date() - timedelta(days=1)
+    moment = now or datetime.now(UTC)
+    return moment.astimezone(NEW_YORK).date() - timedelta(days=1)
 
 
 class AlpacaClient:

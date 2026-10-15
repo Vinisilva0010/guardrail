@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Final
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement, and_, func, or_, select, text
 from sqlalchemy.orm import Session
@@ -285,18 +286,35 @@ def _closed_days(
     return {r.astimezone(UTC).date() for r in rows}
 
 
+# B3 closing bars are collected on Tuesday and Friday evenings (PLANO §3.5), so
+# between collections the newest bar is legitimately a few days old. Kept in step
+# with the b3_close job by a test.
+B3_COLLECTION_WEEKDAYS: Final = (1, 4)  # Tuesday, Friday
+NEW_YORK: Final = ZoneInfo("America/New_York")
+
+
 def expected_last_bar(session: Session, market: str, now: datetime) -> date:
     """The newest daily bar that should exist for a market right now.
 
-    Crypto bars are daily in UTC: yesterday's is the last closed one. Equity
-    markets: the last trading day before today, since the free feed serves
-    bars through the previous session only.
+    * crypto: daily bars are UTC, so yesterday's is the last closed one;
+    * US: the free feed serves bars through New York's previous day, and the
+      last trading day among those;
+    * Brazil: the session of the latest Tuesday or Friday before today, the days
+      the closing collection runs; older than that is genuinely stale.
     """
     today = now.astimezone(UTC).date()
-    day = today - timedelta(days=1)
     if market == "crypto":
-        return day
-    scope = EventScope.US if market == "us" else EventScope.BR
+        return today - timedelta(days=1)
+
+    if market == "us":
+        day = now.astimezone(NEW_YORK).date() - timedelta(days=1)
+        scope = EventScope.US
+    else:
+        day = today - timedelta(days=1)
+        while day.weekday() not in B3_COLLECTION_WEEKDAYS:
+            day -= timedelta(days=1)
+        scope = EventScope.BR
+
     closed = _closed_days(session, scope, day - timedelta(days=10), day)
     while day.weekday() >= 5 or day in closed:
         day -= timedelta(days=1)
@@ -373,7 +391,7 @@ def upcoming_events(
         select(ScheduledEvent, Instrument.symbol, Instrument.venue)
         .outerjoin(Instrument, Instrument.id == ScheduledEvent.instrument_id)
         .where(
-            _not_yet_over(now),
+            not_yet_over(now),
             ScheduledEvent.starts_at <= now + timedelta(days=days),
         )
     )
@@ -396,7 +414,7 @@ def upcoming_events(
     return views[:limit]
 
 
-def _not_yet_over(now: datetime) -> ColumnElement[bool]:
+def not_yet_over(now: datetime) -> ColumnElement[bool]:
     """Events still ahead. One with an hour must be after now; a date-only one
     (stored at midnight UTC) stays until its day ends."""
     return or_(
@@ -737,7 +755,7 @@ def build_cards(
         .join(Instrument, Instrument.id == ScheduledEvent.instrument_id)
         .where(
             ScheduledEvent.instrument_id.in_([s.instrument_id for s in snaps]),
-            _not_yet_over(now),
+            not_yet_over(now),
             ScheduledEvent.starts_at <= now + timedelta(days=EVENT_WINDOW_DAYS),
         )
         .order_by(ScheduledEvent.starts_at)
@@ -906,7 +924,7 @@ def bound_event_cards(session: Session, market: str, now: datetime) -> Block[Ass
             .join(Instrument, Instrument.id == ScheduledEvent.instrument_id)
             .where(
                 Instrument.venue.in_(MARKET_VENUES[market]),
-                _not_yet_over(now),
+                not_yet_over(now),
                 ScheduledEvent.starts_at <= now + timedelta(days=EVENT_WINDOW_DAYS),
             )
             .distinct()

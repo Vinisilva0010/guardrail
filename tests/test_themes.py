@@ -321,3 +321,54 @@ def test_screen_counts_stories_and_outlets_not_catalyst_rows(session: Session) -
     (theme,) = block.rows
     assert (theme.n_items, theme.n_outlets) == (5, 3)  # six catalyst rows, five stories
     assert theme.assets == (("VALE3", D("0.031")),)
+
+
+# --- analyst-rating notes ----------------------------------------------------
+
+
+def test_rating_note_boilerplate_and_brokers_are_not_subjects() -> None:
+    found = terms(
+        "Morgan Stanley Maintains Overweight on Apple, Raises Price Target to $300"
+    )
+
+    assert set(found) == {"apple"}
+
+
+def test_notes_on_unrelated_companies_do_not_form_a_theme() -> None:
+    """Measured on real data: 218 such notes once clustered as one theme."""
+    notes = [
+        _story(
+            0,
+            "alpaca.news",
+            "BTIG Maintains Buy on CrowdStrike, Raises Price Target to $312",
+        ),
+        _story(
+            1,
+            "alpaca.news",
+            "Baird Maintains Neutral on Domino's Pizza, Lowers Price Target to $320",
+        ),
+        _story(
+            2,
+            "alpaca.news",
+            "Barclays Maintains Overweight on Shift4 Payments, Raises Price Target",
+        ),
+        _story(
+            3,
+            "alpaca.news",
+            "Wells Fargo Reiterates Buy on Amplitude, Lowers Price Target to $16",
+        ),
+    ]
+
+    assert all(len(c.stories) == 1 for c in cluster_stories(notes))
+
+
+def test_the_subject_of_a_note_still_groups_its_own_coverage() -> None:
+    notes = [
+        _story(0, "rss.infomoney", "Barclays Maintains Buy on Dominos Pizza"),
+        _story(1, "rss.moneytimes", "Baird Lowers Price Target on Dominos Pizza"),
+    ]
+
+    (cluster,) = cluster_stories(notes)
+
+    assert len(cluster.stories) == 2
+    assert cluster.label == "dominos · pizza"

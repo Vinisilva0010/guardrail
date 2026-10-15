@@ -246,9 +246,12 @@ def check_source_freshness(session: Session, report: Report) -> None:
     A collector dying quietly while the engine keeps firing on stale data is the
     worst failure mode this system has.
     """
+    # The audit's own rows are left out: counting its previous failure as a broken
+    # source would make it fail forever, long after the cause was fixed.
     sql = """
         SELECT source, last_success_at, consecutive_failures, last_error
         FROM source_health
+        WHERE source NOT IN ('job.audit', 'quality.completeness')
         ORDER BY source
     """
     limite = datetime.now(UTC) - timedelta(days=MAX_STALENESS_DAYS)

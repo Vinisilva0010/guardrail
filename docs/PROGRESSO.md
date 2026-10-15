@@ -268,7 +268,8 @@ Data: 2026-10-15. Critério de saída cumprido. Portão verde.
 1. **O cabeçalho de risco mostra só os limites**, porque `account_state`, `position` e
    `locked_capital` não existem (SPEC Fase 3 e §9). Mostra "capital livre, risco aberto e
    posições do mês: ainda sem registro" em vez de um número que não tem. As constantes da §8
-   foram copiadas **sem alteração** para `engine/risk_limits.py`.
+   são lidas direto do `config.py`, onde já estavam (uma primeira versão minha duplicou
+   as constantes num módulo novo; removi para não haver duas fontes de verdade).
 2. **`/radar` não cumpre o plano inteiro**: sem as tabelas acima, não há posição, capital travado
    nem data de revisão para destacar. A página diz isso numa faixa vermelha e lista os limites.
    Fica dependente da Fase 3 da SPEC.
@@ -299,3 +300,141 @@ de 03/10, esperada 14/10; coletor de barras parado") e no cabeçalho (6 fontes v
 - Tabelas de capital, posição e contrato (SPEC Fase 3) para `/radar` e o cabeçalho.
 - Coluna `name` em `instrument`.
 - Eventos próprios de ativo (resultados, desbloqueios) seguem sem fonte: aviso permanente nos cards.
+
+## Fase 5 — Agendamento
+
+Data: 2026-10-15. Critério de saída: **parcialmente verificado** (ver "Não verificado"). Portão verde.
+
+### O que foi feito
+
+- `uv run guardrail-scheduler` (APScheduler dentro de um processo). `--list` mostra a agenda,
+  `--once [JOB ...]` roda tarefas agora e sai, `--skip JOB ...` deixa tarefas de fora.
+- **20 tarefas**, todas em UTC: batimento (60 s), calendário macro (6 h), notícia Alpaca e RSS
+  (30 min), temas (30 min), open interest recente (15 min), velas cripto 1h/4h/1d, funding (4 h),
+  dumps da Vision (diário), barras dos EUA (diário), eventos societários, feriados dos EUA,
+  vencimentos e feriados da B3, BCB, fechamento da B3 (terça e sexta), estatística de eventos
+  (noite), auditoria (noite) e alertas (5 min). Os horários de disparo estão conferidos por teste.
+- **Política de falha** (funções puras, testadas com tempo fixo e gerador semeado): backoff
+  exponencial `30 s × 2^(n-1)` com teto de 15 min e jitter de 50–100%; **disjuntor** que abre
+  na 5ª falha seguida por 1 h e reabre na hora se a tentativa "meio-aberta" falhar. A tarefa do
+  calendário macro (fonte que responde 429) e a da B3 têm backoff próprio mais longo.
+- **Falha não derruba o processo nem as outras tarefas**: exceção, falha reportada, ou falha ao
+  gravar a saúde viram resultado; só `KeyboardInterrupt` passa.
+- Cada tarefa grava `job.<nome>` em `source_health`, e os coletores seguem gravando a própria
+  fonte. Um batimento `scheduler.heartbeat` mostra no cabeçalho se o agendador morreu.
+- **Uma instância só** (advisory lock do Postgres), **sem sobreposição** (`max_instances=1`,
+  `coalesce`), desligamento limpo em SIGTERM/SIGINT.
+- **Reiniciar é seguro e barato**: na partida só roda o que está velho (fonte mais antiga que
+  1,5 × a cadência). Em teste real, com tudo em dia, o único catch-up foi a auditoria.
+- Novo coletor `oi_recent.py`: open interest dos últimos 30 dias pela REST da Binance. A SPEC §5 o
+  lista e `store_metrics` já previa a convivência com a Vision, mas ele não existia; sem ele o
+  posicionamento nunca tinha menos de um dia. Preserva as razões que a Vision grava (testado).
+- Coletor de notícia ganhou `live=True` (lê até agora; o histórico continua parando em ontem).
+- Agrupamento de temas: vocabulário de nota de analista e corretoras nas stopwords. Em janela
+  real de 1.278 manchetes isso reduziu o maior "tema" de 218 notas sem relação para 28.
+
+### Incidentes desta fase (todos achados rodando de verdade)
+
+1. **Fechamento da B3 gastou 1.081 das 15.000 requisições do mês em minutos** e criou 489
+   instrumentos. O adaptador chamou `backfill_b3(limit=None)`, que percorre toda a listagem
+   `/available` da brapi. Interrompi à mão, apaguei os 489 instrumentos criados por essa rodada
+   (973 velas, sem nenhuma outra dependência; os 600 originais intactos) e reescrevi a tarefa:
+   agora só visita os tickers já em `instrument`, com teto de 700 requisições por rodada, parada
+   limpa quando a cota recusa, e testes que travam "uma requisição por ticker do universo e
+   nenhuma fora dele". A cota usada neste mês é **1.081 / 15.000** (7%); não dá para devolver.
+2. **Barras dos EUA falhariam toda noite**: a Alpaca mede "dado recente" pela data de Nova York,
+   e eu usava a de UTC. Corrigido, e a tarefa foi para 05:30 UTC. A tela usa a mesma noção de
+   "esperado" (e, para a B3, a de coleta só às terças e sextas).
+3. **A auditoria se contava como fonte quebrada** e nunca se recuperava. Passou a ignorar as
+   próprias linhas, e o resultado dela vai para `quality.completeness` em vez de falhar a tarefa.
+4. **A trava de instância única não era liberada** ao fechar a conexão (volta ao pool ainda
+   segurando o lock da sessão). Adicionei `release_lock`.
+5. Duas constantes de risco duplicadas (em `config.py` e num módulo meu): removi a minha.
+
+### Não verificado
+
+- **"Roda 24 horas sem vazar memória"**: não consigo verificar numa sessão. O que medi está em
+  "Teste de resistência" abaixo, e é só uma amostra curta.
+- **A coleta intradiária da B3** (watchlist de 15 tickers a cada 30 min, §3.5) **não foi
+  implementada**: não há onde gravar cotação intradiária (o `B3Quote` não tem tabela) nem lista de
+  15 tickers por mercado. As 600 ações têm fechamento duas vezes por semana.
+- Tarefas de Alpha Vantage, DefiLlama e FRED não existem (sem coletor; ver Fase 2).
+- Reconstrução do universo da Alpaca (`universe.py`) não está agendada: o plano não a lista.
+
+## Fase 6 — Telegram
+
+Data: 2026-10-15. Critério de saída: **cumprido com a API simulada; nunca enviou uma mensagem
+real**, porque `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` não existem no `.env` (regra 30).
+
+### O que foi feito
+
+- `alerts/telegram.py`: `httpx` direto, sem SDK, **só envia** (nenhuma rota recebe nada, não há
+  webhook). Texto puro, sem `parse_mode`, para manchete de terceiro não injetar formatação. O
+  token vai no caminho da URL, então todo erro é reconstruído só com fatos que não o contêm
+  (código HTTP, descrição do Telegram), sem encadear a exceção do `httpx` cuja mensagem traz a URL.
+- **Os quatro alertas, e só eles** (`alerts/rules.py`, funções puras): evento de alto impacto a 24 h
+  e a 1 h; volume ≥ 3× em ativo da watchlist; revisão de posição vencida; fonte parada há mais de
+  6 h. Cada alerta tem uma chave que diz sobre o quê é, gravada em `alert_sent` **só depois de o
+  Telegram aceitar**; falha de entrega interrompe a passada e o resto sai na seguinte.
+- `uv run guardrail-alerts --dry-run` mostra o que sairia sem enviar nem gravar nada.
+  `uv run guardrail-watch add|remove|list` gerencia a watchlist (a tela é só leitura).
+- **Redação de segredos** (plano §7, que ainda não existia): `redact.py` mascara `apikey`,
+  `api_key`, `token`, `secret`, o token do bot no caminho da URL e valores `Bearer`, em todo
+  campo de log, em traceback e no texto de erro. Fica ligado em todo comando, porque o pacote
+  `guardrail` configura o `structlog` ao ser importado.
+- Teste exigido: os quatro disparam com a API simulada; nenhum segredo em log, em erro nem em
+  cadeia de exceção; token escondido no `repr` do cliente.
+
+### Decisões minhas, para revisão
+
+1. "Ativos do operador" não existia: criei a tabela `watchlist` e o comando. O alerta de evento
+   cobre evento de mercado inteiro (alto impacto, `us`/`br`, os mesmos escopos da amostra
+   estatística) mais evento de ativo da watchlist.
+2. Evento visto pela primeira vez a menos de 1 h recebe só a mensagem de 1 h (a de 24 h é marcada
+   como superada). Evento só com data recebe uma mensagem, no dia anterior ou no próprio dia.
+3. Fonte parada: uma mensagem por interrupção (a chave inclui a última coleta boa), no máximo 10
+   por passada. As linhas `job.*` e o batimento ficam de fora; um agendador morto não consegue
+   avisar que morreu, só o ponto "Agendador" do cabeçalho.
+4. Quando o token falta, a tarefa não faz nada e o cabeçalho mostra "Alertas Telegram: sem
+   coletor". Quando o chat id falta, idem.
+
+### O que ficou pendente
+
+- **Chaves do Telegram no `.env`** e um envio real de teste.
+- **Alerta 3 (revisão vencida) só funciona com as tabelas de posição da SPEC Fase 3**, que não
+  existem. A interface `ReviewSource` está pronta e testada com uma fonte falsa; a real devolve
+  "não monitorado", e a passada diz isso, em vez de devolver lista vazia, que pareceria "nada
+  vencido".
+- O plano pede um padrão novo no scanner de segredos do `pre-commit` para o formato das chaves da
+  Alpha Vantage e da FRED. **Não existe `.pre-commit-config.yaml`** (nem GitHub Actions) neste
+  repositório, então não há scanner para estender. Nenhuma fixture com chave foi gravada (os
+  coletores dessas duas fontes não existem).
+
+## Fase 7 — Medição
+
+Data: 2026-10-15. **Não executada. Isso é um resultado, não um contorno.**
+
+Duas razões independentes, com números:
+
+1. **O código dos setups e do backtester não está no repositório.** Não há uma linha de
+   `crypto_deleverage_flush`, de `equity_volume_breakout` nem de laço de backtest em `src/` ou
+   `tests/`. A SPEC §14 descreve o resultado medido (1 disparo em 3 anos; +2,15% de média e
+   +0,53% de mediana para o setup de ações), mas o código que o produziu não foi commitado. Rodar o
+   portão da §11 exige reescrevê-los, e reescrever de memória um teste cujo veredicto já foi
+   "falhou" seria produzir um número sem lastro.
+2. **Não há evento histórico para medir.** `scheduled_event` guarda 53 eventos já vencidos, de
+   12 a 15/10/2026 (4 dias), e **um único dia de alto impacto vencido** (o CPI de 14/10, 4
+   linhas do mesmo instante). O portão pede 40 disparos mínimos, em meia-metade, contra uma linha
+   de base de entrada aleatória. Com dado de um dia isso não tem como fechar.
+
+Quando houver as duas coisas (setups no repositório e meses de agenda acumulada ou uma fonte de
+histórico, como a FRED), a medição é executável. Até lá, **nenhuma regra é habilitada** e o sistema
+segue como tela de contexto e disciplina, que é o resultado aceitável descrito no plano.
+
+## Teste de resistência do agendador (amostra curta, não as 24 h)
+
+Daemon real por cerca de 17 minutos (sem a B3): memória constante em 78 MB, batimento a cada
+minuto, `open_interest` disparou sozinho às 02:55 UTC (180 linhas), o disjuntor abriu na 5ª falha
+da versão antiga da auditoria sem derrubar o processo, e SIGTERM encerrou limpo. Não cheguei a
+observar o cron das 03:02 nem a reinício comparando contagens; as 24 h seguem **não verificadas**.
+Os testes de reinício e de idempotência dos coletores existem por coletor, não pelo processo.

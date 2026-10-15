@@ -18,9 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from sqlalchemy.orm import Session
 
+from guardrail import config
 from guardrail.db.models import EventImpact, EventScope
 from guardrail.db.session import get_session_factory
-from guardrail.engine import risk_limits
 from guardrail.web import clock as market_clock
 from guardrail.web import coverage, health, queries
 from guardrail.web import format as fmt
@@ -134,15 +134,16 @@ async def security_headers(
 def _risk_line() -> dict[str, Any]:
     """The limits that apply to every position, always in view.
 
-    Capital and open positions are not tracked yet (SPEC phase 3), so the line
-    says that instead of showing a number it does not have.
+    Read from config.py, the single home of the SPEC §8 constants. Capital and
+    open positions are not tracked yet (SPEC phase 3), so the line says that
+    instead of showing a number it does not have.
     """
+    per_trade = fmt.percent(config.MAX_RISK_PCT_PER_TRADE, 1, sign=False)
+    open_risk = fmt.percent(config.MAX_OPEN_RISK_PCT, 0, sign=False)
     return {
         "limits": (
-            f"limite {fmt.number(risk_limits.MAX_RISK_PER_TRADE_PCT, 1)}% "
-            "por posição · "
-            f"{fmt.number(risk_limits.MAX_OPEN_RISK_PCT, 0)}% de risco aberto · "
-            f"{risk_limits.MAX_NEW_POSITIONS_PER_MONTH} posições novas por mês"
+            f"limite {per_trade} por posição · {open_risk} de risco aberto · "
+            f"{config.MAX_NEW_POSITIONS_PER_MONTH} posições novas por mês"
         ),
         "tracked": "capital livre, risco aberto e posições do mês: ainda sem registro",
     }
@@ -355,20 +356,22 @@ def radar(session: SessionDep) -> HTMLResponse:
         limits=(
             (
                 "Risco máximo por posição",
-                f"{fmt.number(risk_limits.MAX_RISK_PER_TRADE_PCT, 1)}% "
-                "do capital livre",
+                fmt.percent(config.MAX_RISK_PCT_PER_TRADE, 1, sign=False)
+                + " do capital livre",
             ),
             (
                 "Risco aberto simultâneo",
-                f"{fmt.number(risk_limits.MAX_OPEN_RISK_PCT, 0)}% do capital livre",
+                fmt.percent(config.MAX_OPEN_RISK_PCT, 0, sign=False)
+                + " do capital livre",
             ),
-            ("Posições novas por mês", str(risk_limits.MAX_NEW_POSITIONS_PER_MONTH)),
-            ("Prazo máximo de revisão", f"{risk_limits.MAX_REVIEW_DAYS} dias"),
+            ("Posições novas por mês", str(config.MAX_NEW_POSITIONS_PER_MONTH)),
+            ("Prazo máximo de revisão", f"{config.MAX_REVIEW_HORIZON_DAYS} dias"),
             (
                 "Pausa após perdas seguidas",
-                f"{risk_limits.COOLDOWN_DAYS} dias após "
-                f"{risk_limits.COOLDOWN_AFTER_LOSSES} perdas",
+                f"{config.LOSS_STREAK_COOLDOWN_DAYS} dias após "
+                f"{config.LOSS_STREAK_THRESHOLD} perdas",
             ),
+            ("Alavancagem máxima", f"{config.MAX_LEVERAGE}x (não suportada)"),
         ),
     )
 

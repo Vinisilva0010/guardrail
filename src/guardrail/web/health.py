@@ -14,6 +14,7 @@ from typing import Final
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from guardrail.config import get_settings
 from guardrail.db.models import SourceHealth
 from guardrail.web.format import age, clock
 
@@ -75,6 +76,22 @@ GROUPS: Final = (
         ("calendar.rules",),
         timedelta(hours=36),
     ),
+    Group(
+        "binance.oi",
+        "Open interest recente",
+        ("binance.oi_recent.",),
+        timedelta(hours=1),
+    ),
+    Group("analysis.themes", "Temas", ("analysis.themes",), timedelta(hours=2)),
+    Group(
+        "analysis.impact",
+        "Estatística de eventos",
+        ("analysis.event_impact",),
+        timedelta(hours=36),
+    ),
+    Group("quality", "Auditoria de dados", ("quality.",), timedelta(hours=36)),
+    Group("scheduler", "Agendador", ("scheduler.",), timedelta(minutes=5)),
+    Group("alerts", "Alertas Telegram", ("alerts.",), timedelta(minutes=30)),
 )
 
 # Sources the plan wants that have no collector, with the reason. Shown in the
@@ -135,11 +152,31 @@ def classify(row: SourceHealth, max_age: timedelta, now: datetime) -> tuple[Stat
     return State.OK, detail
 
 
+TELEGRAM_MISSING: Final = "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID ausentes"
+
+
+def missing_collectors(telegram_configured: bool) -> dict[str, str]:
+    """Everything the plan wants that nothing collects or sends, with the reason."""
+    missing = dict(NO_COLLECTOR)
+    if not telegram_configured:
+        missing["Alertas Telegram"] = TELEGRAM_MISSING
+    return missing
+
+
+def telegram_is_configured() -> bool:
+    """Whether the alert bot can send. Read from the settings, never from the DB."""
+    settings = get_settings()
+    return bool(settings.telegram_bot_token and settings.telegram_chat_id)
+
+
 def dots(session: Session, now: datetime) -> list[Dot]:
     """One dot per source group, then one per source with no collector."""
     rows = list(session.execute(select(SourceHealth)).scalars())
+    configured = telegram_is_configured()
     out: list[Dot] = []
     for group in GROUPS:
+        if group.key == "alerts" and not configured:
+            continue  # listed below as "no collector", with the reason
         members = [r for r in rows if r.source.startswith(group.prefixes)]
         if not members:
             out.append(Dot(group.label, State.ABSENT, "nenhuma coleta registrada"))
@@ -152,7 +189,7 @@ def dots(session: Session, now: datetime) -> list[Dot]:
         out.append(Dot(group.label, state, worst_detail))
     out.extend(
         Dot(label, State.ABSENT, f"sem coletor: {reason}")
-        for label, reason in NO_COLLECTOR.items()
+        for label, reason in missing_collectors(configured).items()
     )
     return out
 

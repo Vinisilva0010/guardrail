@@ -130,7 +130,9 @@ def store_news(
     return inserted
 
 
-async def fetch_news(client: AlpacaClient, start: date, end: date) -> list[NewsItem]:
+async def fetch_news(
+    client: AlpacaClient, start: date | datetime, end: date | datetime
+) -> list[NewsItem]:
     """Page through every news item in the window."""
     out: list[NewsItem] = []
     token: str | None = None
@@ -156,10 +158,16 @@ async def fetch_news(client: AlpacaClient, start: date, end: date) -> list[NewsI
     return out
 
 
-async def run_news_backfill(days: int) -> tuple[int, int]:
-    """Collect news for the universe. Returns (parsed, stored)."""
+async def run_news_backfill(days: int, live: bool = False) -> tuple[int, int]:
+    """Collect news for the universe. Returns (parsed, stored).
+
+    The historical run stops at yesterday, like the bars. News has no such delay
+    (the newest item of the feed is minutes old), so the scheduled run passes
+    live=True and reads up to the present; otherwise a story would reach the
+    screen a day late.
+    """
     start = date.today() - timedelta(days=days)
-    end = latest_available_day()
+    end: date | datetime = datetime.now(UTC) if live else latest_available_day()
 
     with session_scope() as session:
         universe = load_universe(session)

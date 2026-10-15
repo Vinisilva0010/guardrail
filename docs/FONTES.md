@@ -104,3 +104,39 @@ máquina do operador. Nenhum substituto foi procurado para fonte que falhou (reg
   publicado. Não foi feito. **Nenhuma data do Copom foi escrita à mão** (regra 17).
 - Efeito: `/macro` e `/brasil` mostram Selic e Focus, mas **sem data da próxima reunião**.
   A tela tem de dizer "data do Copom: fonte indisponível", nunca omitir a linha.
+
+---
+
+# Fase 5 — achados ao colocar as fontes no agendador
+
+## Alpaca: "dado recente" é medido pela data de Nova York
+
+- Verificado em 2026-10-15 02:28 UTC (22:28 em Nova York, ainda dia 14 lá):
+  `GET /v2/stocks/bars?...&end=2026-10-14&feed=sip` → **HTTP 403**
+  `{"message":"subscription does not permit querying recent SIP data"}`;
+  com `end=2026-10-13`, `end=2026-10-12` e `end=2026-10-09` → HTTP 200.
+- Consequência: "ontem" tem de ser a data de **Nova York** menos um dia. O código usava a data
+  UTC, o que funcionava de manhã (horário de Brasília) e **falharia toda noite** no horário em que
+  o agendamento rodaria (00:40 UTC = 20:40 em NY). Corrigido em `latest_available_day()`; o
+  job de barras dos EUA passou para 05:30 UTC (01:30 em NY, já "dia seguinte").
+
+## brapi: `/available` lista bem mais do que os 600 tickers do orçamento
+
+- O coletor antigo `backfill_b3` percorre a lista inteira de `/available`. Rodado sem `--limit`
+  pelo agendador, criou 489 instrumentos novos e gastou **1.081 requisições** (de 15.000) em
+  poucos minutos, até eu interromper à mão. Detalhes e correção em `PROGRESSO.md`.
+- A atualização agendada agora só visita os tickers **que já estão em `instrument`** (600), com
+  teto de 700 requisições por rodada e parada limpa quando a cota recusa.
+
+## BCB SGS: erro 502 transitório
+
+- `GET .../bcdata.sgs.432/dados?...` respondeu `502 Bad Gateway` uma vez durante a verificação
+  (2026-10-15 ~02:30 UTC); repetido minutos depois respondeu 200. Tratado como falha com
+  retentativa e backoff, não como fonte indisponível.
+
+## Notícias da Alpaca: quase tudo é nota de analista com molde fixo
+
+- Em uma janela real de 48 h (1.278 manchetes), as palavras `price`, `target`, `maintains`
+  aparecem em 44%, 44% e 38% das manchetes. São notas do tipo "X Maintains Buy on Y, Raises
+  Price Target to $Z". Servem como catalisador booleano por ativo (o uso da SPEC §5), mas **não
+  servem para detectar tema do mundo**, e vêm de um único veículo (`alpaca.news`).

@@ -13,6 +13,7 @@ from typing import Any, Final
 
 import httpx
 import structlog
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tenacity import (
     retry,
@@ -31,7 +32,7 @@ from guardrail.collectors.store import (
     store_klines,
 )
 from guardrail.config import get_settings
-from guardrail.db.models import AssetClass
+from guardrail.db.models import AssetClass, Instrument
 from guardrail.db.session import dispose_engine, session_scope
 
 log = structlog.get_logger(__name__)
@@ -284,3 +285,128 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# --- scheduled refresh of the existing universe -------------------------------------
+
+# One closing run costs one request per ticker. PLANO §3.5 budgets about 600 per
+# run; this ceiling stops a run that would silently grow past it (for example if
+# the universe table were filled from the full brapi listing).
+MAX_REQUESTS_PER_RUN: Final = 700
+REFRESH_BATCH: Final = 40
+REFRESH_RANGE: Final = "5d"
+# A run where more than this share of tickers failed is a failed run.
+MAX_FAILED_SHARE: Final = Decimal("0.2")
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshResult:
+    """Outcome of a closing refresh."""
+
+    symbols: int
+    requested: int
+    fetched: int
+    inserted: int
+    failed: int
+    halted: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        if self.halted is not None or not self.symbols:
+            return False
+        return Decimal(self.failed) / Decimal(self.symbols) <= MAX_FAILED_SHARE
+
+
+def check_ceiling(count: int) -> None:
+    """Refuse a run that would spend more than its share of the monthly allowance."""
+    if count > MAX_REQUESTS_PER_RUN:
+        raise UpstreamDataError(
+            f"{count} tickers exceed the per-run ceiling of {MAX_REQUESTS_PER_RUN}; "
+            "refusing to spend the monthly allowance"
+        )
+
+
+def b3_universe(session: Session) -> list[str]:
+    """The B3 tickers already tracked. The scheduled run never widens this set:
+    the universe is decided elsewhere, not by whatever brapi happens to list."""
+    return list(
+        session.execute(
+            select(Instrument.symbol)
+            .where(Instrument.venue == VENUE, Instrument.is_active.is_(True))
+            .order_by(Instrument.symbol)
+        ).scalars()
+    )
+
+
+async def refresh_closes(
+    session: Session,
+    client: BrapiClient,
+    symbols: list[str],
+    span: str = REFRESH_RANGE,
+) -> RefreshResult:
+    """Fetch recent daily bars for `symbols` and store them in the caller's session.
+
+    Stops without raising when the request budget refuses a call, keeping what
+    was already stored.
+    """
+    fetched = inserted = failed = requested = 0
+    halted: str | None = None
+    for symbol in symbols:
+        try:
+            requested += 1
+            bars = await client.fetch_history(session, symbol, span)
+        except QuotaExceeded as exc:
+            requested -= 1
+            halted = str(exc)
+            break
+        except Exception as exc:
+            failed += 1
+            log.warning("b3.symbol_failed", symbol=symbol, error=str(exc))
+            continue
+        if not bars:
+            continue
+        instrument = get_or_create_instrument(session, symbol, VENUE, AssetClass.EQUITY)
+        fetched += len(bars)
+        inserted += store_klines(session, instrument.id, TIMEFRAME, bars)
+    return RefreshResult(len(symbols), requested, fetched, inserted, failed, halted)
+
+
+async def run_refresh(span: str = REFRESH_RANGE) -> RefreshResult:
+    """Entry point of the scheduled closing run."""
+    with session_scope() as session:
+        symbols = b3_universe(session)
+    try:
+        check_ceiling(len(symbols))
+    except UpstreamDataError as exc:
+        with session_scope() as session:
+            record_failure(session, SOURCE, str(exc))
+        raise
+
+    totals = RefreshResult(len(symbols), 0, 0, 0, 0)
+    async with httpx.AsyncClient(timeout=60.0) as http:
+        client = BrapiClient(http)
+        for start in range(0, len(symbols), REFRESH_BATCH):
+            with session_scope() as session:
+                part = await refresh_closes(
+                    session, client, symbols[start : start + REFRESH_BATCH], span
+                )
+            totals = RefreshResult(
+                totals.symbols,
+                totals.requested + part.requested,
+                totals.fetched + part.fetched,
+                totals.inserted + part.inserted,
+                totals.failed + part.failed,
+                part.halted,
+            )
+            if part.halted:
+                break
+
+    with session_scope() as session:
+        if totals.ok:
+            record_success(session, SOURCE)
+        else:
+            reason = (
+                totals.halted or f"{totals.failed} of {totals.symbols} tickers failed"
+            )
+            record_failure(session, SOURCE, reason)
+    return totals

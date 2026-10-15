@@ -144,3 +144,21 @@ def test_failing_source_is_an_error(session: Session) -> None:
     check_source_freshness(session, report)
 
     assert any("test.source" in f.detail for f in report.errors)
+
+
+def test_the_audit_does_not_count_its_own_failures(session: Session) -> None:
+    """Counting them makes it fail forever, long after the cause was fixed."""
+    for _ in range(3):
+        record_failure(session, "job.audit", "earlier audit run failed")
+    for _ in range(2):
+        record_failure(session, "quality.completeness", "errors found last night")
+    record_failure(session, "test.other_source", "a real failing source")
+    session.flush()
+
+    report = Report()
+    check_source_freshness(session, report)
+
+    details = " ".join(f.detail for f in report.errors)
+    assert "job.audit" not in details
+    assert "quality.completeness" not in details
+    assert "test.other_source" in details

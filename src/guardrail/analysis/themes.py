@@ -49,99 +49,45 @@ MIN_TERM_LENGTH: Final = 3
 MIN_STORIES_STORED: Final = 2
 MAX_ASSETS: Final = 8
 
+
+def _words(text: str) -> frozenset[str]:
+    return frozenset(text.split())
+
+
 # Words that carry no subject. Written without accents: terms are compared
 # without them. Plain data, easy to extend when a useless word shows up in a
 # label.
-STOPWORDS: Final = frozenset(
-    [
-        "para",
-        "com",
-        "uma",
-        "uns",
-        "umas",
-        "dos",
-        "das",
-        "nos",
-        "nas",
-        "por",
-        "mais",
-        "como",
-        "entre",
-        "sobre",
-        "apos",
-        "depois",
-        "ate",
-        "pela",
-        "pelo",
-        "seu",
-        "sua",
-        "seus",
-        "suas",
-        "esta",
-        "este",
-        "essa",
-        "esse",
-        "isso",
-        "mas",
-        "nao",
-        "sem",
-        "ser",
-        "foi",
-        "sao",
-        "vai",
-        "pode",
-        "ainda",
-        "quando",
-        "tambem",
-        "aos",
-        "que",
-        "sua",
-        "dele",
-        "dela",
-        "eles",
-        "elas",
-        "tem",
-        "ter",
-        "the",
-        "and",
-        "for",
-        "with",
-        "from",
-        "that",
-        "this",
-        "will",
-        "after",
-        "over",
-        "into",
-        "amid",
-        "about",
-        "are",
-        "was",
-        "were",
-        "has",
-        "have",
-        "its",
-        "their",
-        "than",
-        "more",
-        "says",
-        "said",
-        "new",
-        "not",
-        "but",
-        "out",
-        "can",
-        "may",
-        "how",
-        "why",
-        "who",
-        "what",
-        "when",
-        "where",
-        "year",
-        "years",
-    ]
+STOPWORDS: Final = _words(
+    """
+para com uma uns umas dos das nos nas por mais como entre sobre apos depois
+ate pela pelo seu sua seus suas esta este essa esse isso mas nao sem ser foi
+sao vai pode ainda quando tambem aos que sua dele dela eles elas tem ter
+the and for with from that this will after over into amid about are was were
+has have its their than more says said new not but out can may how why who
+what when where year years
+    """
 )
+
+# Vocabulary of analyst-rating notes ("Morgan Stanley Maintains Overweight on X,
+# Raises Price Target to $Y") and of the brokers that write them. Measured on a
+# real 48-hour window of 1,278 stories: these words appear in 4% to 44% of all
+# headlines, and without removing them 218 notes on unrelated companies formed
+# one "theme". They say nothing about what is happening in the world.
+RATING_NOTE_WORDS: Final = _words(
+    """
+price target targets maintains maintain lowers lower raises raise reiterates
+reiterated upgrades upgrade downgrades downgrade upgraded downgraded
+initiates initiated coverage rating ratings buy sell hold overweight
+underweight outperform underperform neutral equal weight perform stock
+stocks shares share earnings call transcript announces announced analyst
+analysts would much today ago says said
+morgan stanley barclays wells fargo rbc goldman sachs jpmorgan citi
+citigroup ubs deutsche baird btig piper sandler jefferies evercore stifel
+cowen keybanc oppenheimer mizuho nomura bernstein raymond james truist
+wedbush needham canaccord craig hallum loop capital securities
+    """
+)
+ALL_STOPWORDS: Final = STOPWORDS | RATING_NOTE_WORDS
 
 _WORD: Final = re.compile(r"[^\W\d_]+", re.UNICODE)
 
@@ -160,7 +106,7 @@ def terms(headline: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for word in _WORD.findall(headline.lower()):
         key = _strip_accents(word)
-        if len(key) < MIN_TERM_LENGTH or key in STOPWORDS:
+        if len(key) < MIN_TERM_LENGTH or key in ALL_STOPWORDS:
             continue
         out.setdefault(key, word)
     return out

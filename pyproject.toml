@@ -27,6 +27,9 @@ dependencies = [
 [project.scripts]
 guardrail = "guardrail:main"
 guardrail-web = "guardrail.web.app:main"
+guardrail-scheduler = "guardrail.scheduler.main:main"
+guardrail-watch = "guardrail.watchlist:main"
+guardrail-alerts = "guardrail.alerts.dispatch:main"
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
@@ -76,6 +79,11 @@ files = ["src", "tests"]
 strict = true
 warn_unreachable = true
 plugins = []
+
+[[tool.mypy.overrides]]
+# APScheduler 3 ships no type information.
+module = ["apscheduler", "apscheduler.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
