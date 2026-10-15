@@ -1,0 +1,83 @@
+{
+ "@odata.context": "https://was-p.bcnet.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata$metadata#ExpectativasMercadoAnuais",
+ "value": [
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-09",
+   "DataReferencia": "2026",
+   "Media": 5.2056,
+   "Mediana": 5.2245,
+   "DesvioPadrao": 0.1947,
+   "Minimo": 4.5,
+   "Maximo": 5.875,
+   "numeroRespondentes": 144,
+   "baseCalculo": 0
+  },
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-09",
+   "DataReferencia": "2027",
+   "Media": 4.3246,
+   "Mediana": 4.3,
+   "DesvioPadrao": 0.4298,
+   "Minimo": 3.17,
+   "Maximo": 6.0,
+   "numeroRespondentes": 144,
+   "baseCalculo": 0
+  },
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-09",
+   "DataReferencia": "2028",
+   "Media": 3.7723,
+   "Mediana": 3.79,
+   "DesvioPadrao": 0.452,
+   "Minimo": 2.8,
+   "Maximo": 6.0,
+   "numeroRespondentes": 121,
+   "baseCalculo": 0
+  },
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-09",
+   "DataReferencia": "2029",
+   "Media": 3.6227,
+   "Mediana": 3.5,
+   "DesvioPadrao": 0.4603,
+   "Minimo": 3.0,
+   "Maximo": 6.0,
+   "numeroRespondentes": 113,
+   "baseCalculo": 0
+  },
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-09",
+   "DataReferencia": "2030",
+   "Media": 3.6076,
+   "Mediana": 3.5,
+   "DesvioPadrao": 0.4805,
+   "Minimo": 3.0,
+   "Maximo": 6.0,
+   "numeroRespondentes": 106,
+   "baseCalculo": 0
+  },
+  {
+   "Indicador": "IPCA",
+   "IndicadorDetalhe": null,
+   "Data": "2026-10-08",
+   "DataReferencia": "2026",
+   "Media": 5.0151,
+   "Mediana": 5.0159,
+   "DesvioPadrao": 0.2261,
+   "Minimo": 4.338,
+   "Maximo": 5.8963,
+   "numeroRespondentes": 142,
+   "baseCalculo": 0
+  }
+ ]
+}

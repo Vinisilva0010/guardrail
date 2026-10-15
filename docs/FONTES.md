@@ -58,3 +58,49 @@ máquina do operador. Nenhum substituto foi procurado para fonte que falhou (reg
 - Efeito: sem FRED, a página `/macro` não tem CPI, desemprego, fed funds nem curva 10y-2y
   vindos de série oficial. O calendário do ForexFactory (Fase 2, item 1) ainda traz a data e o
   consenso desses eventos.
+
+---
+
+# Fase 2 — achados durante a implementação
+
+## ForexFactory (`nfs.faireconomy.media/ff_calendar_thisweek.json`) — disponível, com teto não documentado
+
+- Verificado em 2026-10-15: `http=200`, lista JSON com `title`, `country`, `date`, `impact`,
+  `forecast`, `previous`. `country` é código de moeda (`USD`, `EUR`, ...) ou `All`.
+- **Limite de requisição:** respondeu `429 Too Many Requests` depois de 5 requisições minhas em
+  cerca de 10 minutos (1 verificação manual e 4 execuções do coletor). Nenhum cabeçalho de
+  `Retry-After` foi usado. A cadência de 6 em 6 horas da Fase 5 fica muito abaixo disso, mas o
+  agendador não pode repetir em laço apertado quando receber 429.
+- **Cobre uma semana só.** Não há horizonte de 60 dias nesta fonte. Isso importa para o
+  critério de saída da Fase 2 (ver `PROGRESSO.md`).
+- Itens `impact = Holiday` carregam hora em outro fuso (um feriado do JPY aparece às 19:00 do
+  dia anterior em EDT), então o instante não serve como data de calendário. O coletor os descarta
+  e os conta; feriado de bolsa tem coletor próprio (item 7).
+- `forecast`/`previous` aparecem como texto (`0.2%`, `197K`, `-21.0B`) e às vezes como lixo
+  (`3.80|1.6`). O que não é um número limpo vira `NULL`; o texto cru fica em `payload`.
+
+## BCB SGS — disponível
+
+- `https://api.bcb.gov.br/dados/serie/bcdata.sgs.{432|433}/dados?formato=json&dataInicial=dd/mm/aaaa`,
+  `http=200`. 432 = Selic meta (diária), 433 = IPCA variação mensal.
+- **A série 432 devolve pontos com data futura** (em 2026-10-15 os últimos seis eram de
+  30/10 a 04/11/2026). Ponto datado depois de hoje não é observação: o coletor descarta e conta.
+- Consulta de série diária é limitada a 10 anos por requisição; a carga inicial usa 5.
+
+## BCB Focus (Olinda) — disponível, com armadilhas de codificação
+
+- Ver a seção 1 acima. Além da ordenação, o servidor rejeita `+` no lugar de espaço e `%24` no
+  lugar de `$` com `HTTP 400` e a mensagem enganosa `The types 'Edm.Boolean' and 'Edm.String'
+  are not compatible`. O coletor monta a query à mão (`%20`, `$` literal) e há teste que trava isso.
+- Indicadores coletados: IPCA, Selic, PIB Total, Câmbio (`baseCalculo = 0`).
+
+## Calendário do Copom — indisponível (sem API acessível)
+
+- Página oficial: `https://www.bcb.gov.br/controleinflacao/calendarioreunioescopom`
+  → `http=200`, 2,8 KB: uma casca de aplicação Angular com o aviso "Essa pagina depende do
+  javascript para abrir". Os dados vêm de um pacote carregado sob demanda.
+- `https://www.bcb.gov.br/api/servico/sitebcb/copomcalendario` → `http=400`.
+- Achar o endpoint real exigiria fazer engenharia reversa dos pacotes JS do site, sem contrato
+  publicado. Não foi feito. **Nenhuma data do Copom foi escrita à mão** (regra 17).
+- Efeito: `/macro` e `/brasil` mostram Selic e Focus, mas **sem data da próxima reunião**.
+  A tela tem de dizer "data do Copom: fonte indisponível", nunca omitir a linha.
