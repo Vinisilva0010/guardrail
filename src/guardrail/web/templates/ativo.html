@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{{ symbol }}{% if meta %} <small>{{ meta.venue }} · {{ timeframe }} · {{ meta.bars }} velas</small>{% endif %}</h2>
+
+<p class="switch">
+  {% for s in symbols %}
+  <a href="/ativo/{{ s }}?timeframe={{ timeframe }}"{% if s == symbol %} class="on"{% endif %}>{{ s }}</a>
+  {% endfor %}
+  <span class="sep">·</span>
+  {% for tf in timeframes %}
+  <a href="/ativo/{{ symbol }}?timeframe={{ tf }}"{% if tf == timeframe %} class="on"{% endif %}>{{ tf }}</a>
+  {% endfor %}
+</p>
+
+{% if problem %}
+<p class="asset-alert">Sem gráfico: {{ problem }}</p>
+{% else %}
+{% if meta.age_hours > 24 %}
+<p class="asset-warn">Última vela de {{ meta.last_ts[:16] }} UTC, {{ meta.age_hours }} horas atrás. O coletor deste par está parado — o preço abaixo não é o de agora.</p>
+{% endif %}
+
+<p class="last">
+  <strong>{{ "%.4f"|format(meta.last_close) }}</strong>
+  <span>último fechamento · {{ meta.last_ts[:16] }} UTC</span>
+</p>
+
+<div id="chart" class="chart" data-symbol="{{ symbol }}" data-timeframe="{{ timeframe }}"></div>
+<div id="rsi" class="chart chart-rsi"></div>
+<p class="note">Vela e volume · EMA 21 em azul e EMA 50 em ocre · RSI 14 no painel de baixo, com 30, 50 e 70 marcados · linhas tracejadas: níveis com 2 ou mais toques, ponto de controle do volume e alcance de 20 dias.</p>
+
+<h3>Níveis</h3>
+{% if levels %}
+<ul class="levels">
+  {% for lv in levels %}
+  <li>
+    <span class="num">{{ "%.4f"|format(lv.price) }}</span>
+    <span class="kind {{ lv.kind }}">{{ "resistência" if lv.kind == "resistance" else "suporte" }}</span>
+    <span class="touches">{{ lv.touches }} toques</span>
+    <span class="when">último em {{ lv.last_ts[:10] }}</span>
+  </li>
+  {% endfor %}
+</ul>
+<p class="note">Faixa de preço onde o movimento virou mais de uma vez. Quanto mais toques, mais ordem parada ali.</p>
+{% else %}
+<p class="asset-warn">Nenhuma faixa com 2 ou mais toques nesta janela de {{ meta.bars }} velas.</p>
+{% endif %}
+
+<h3>Alcance pela volatilidade</h3>
+{% if reach %}
+<table class="reach">
+  <tr><th>Prazo</th><th>Baixa forte</th><th>Baixa</th><th>Base</th><th>Alta</th><th>Alta forte</th></tr>
+  {% for b in reach %}
+  <tr>
+    <td>{{ b.horizon_days }} {{ "dia" if b.horizon_days == 1 else "dias" }}</td>
+    <td class="num down">{{ "%.4f"|format(b.far_low) }}</td>
+    <td class="num down">{{ "%.4f"|format(b.near_low) }}</td>
+    <td class="num">{{ "%.4f"|format(b.base) }}</td>
+    <td class="num up">{{ "%.4f"|format(b.near_high) }}</td>
+    <td class="num up">{{ "%.4f"|format(b.far_high) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="note">Distância que o preço vem cobrindo nesse prazo, medida pelo ATR de 14 períodos. Não é probabilidade e não diz direção: diz quanto chão cabe no caminho.</p>
+{% else %}
+<p class="asset-warn">Velas insuficientes para calcular o ATR, então não há alcance a mostrar.</p>
+{% endif %}
+
+{% if profile %}
+<h3>Volume por preço</h3>
+<p>Ponto de controle <span class="num">{{ "%.4f"|format(profile.point_of_control) }}</span> · área de valor de <span class="num">{{ "%.4f"|format(profile.value_area_low) }}</span> a <span class="num">{{ "%.4f"|format(profile.value_area_high) }}</span></p>
+<p class="note">Aproximação feita a partir de vela, não de negócio a negócio: o volume de cada vela é espalhado pela faixa que ela cobriu.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

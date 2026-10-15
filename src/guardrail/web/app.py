@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Annotated, Any, Final
 
 import uvicorn
-from fastapi import Depends, FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from sqlalchemy.orm import Session
@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 from guardrail import config
 from guardrail.db.models import EventImpact, EventScope
 from guardrail.db.session import get_session_factory
+from guardrail.web import chart_data, coverage, health, queries
 from guardrail.web import clock as market_clock
-from guardrail.web import coverage, health, queries
 from guardrail.web import format as fmt
 from guardrail.web.sparkline import sparkline
 
@@ -34,6 +34,7 @@ DEFAULT_PORT: Final = 8787
 # page works without JavaScript; the one script is a same-origin file.
 CSP: Final = (
     "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
+    "connect-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 
@@ -373,6 +374,85 @@ def radar(session: SessionDep) -> HTMLResponse:
             ),
             ("Alavancagem máxima", f"{config.MAX_LEVERAGE}x (não suportada)"),
         ),
+    )
+
+
+# --- chart ----------------------------------------------------------------
+
+# Shown as quick links on the asset page. Crypto only for now: these are the
+# three symbols with intraday candles stored.
+CHART_SYMBOLS: Final = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
+Timeframe = Annotated[str, Query(pattern="^(1h|4h|1d)$")]
+
+
+@app.get("/api/chart/{symbol}")
+def chart_api(
+    session: SessionDep,
+    symbol: str,
+    timeframe: Timeframe = "1d",
+) -> JSONResponse:
+    """Candles, indicators and levels for one symbol, as JSON.
+
+    The only route on this server that answers with data rather than a page. It
+    is still read-only and still same-origin: the chart on /ativo is its only
+    caller.
+    """
+    try:
+        payload = chart_data.build(session, symbol, timeframe, utcnow())
+    except chart_data.UnknownSymbol as missing:
+        raise HTTPException(status_code=404, detail=str(missing)) from missing
+    except ValueError as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from bad
+    return JSONResponse(payload)
+
+
+@app.get("/ativo/{symbol}", response_class=HTMLResponse)
+def asset(
+    session: SessionDep,
+    symbol: str,
+    timeframe: Timeframe = "1d",
+) -> HTMLResponse:
+    """One asset, with its chart.
+
+    The levels and the reach bands are also written out as text, so the page
+    still says something when the chart cannot draw.
+    """
+    now = utcnow()
+    shell: dict[str, Any] = {
+        "symbol": symbol.upper(),
+        "timeframe": timeframe,
+        "timeframes": chart_data.TIMEFRAMES,
+        "symbols": CHART_SYMBOLS,
+    }
+    try:
+        payload = chart_data.build(session, symbol, timeframe, now)
+    except (chart_data.UnknownSymbol, ValueError) as problem:
+        return render(
+            "ativo.html",
+            session,
+            now,
+            "/ativo",
+            shell["symbol"],
+            meta=None,
+            levels=[],
+            reach=[],
+            profile=None,
+            problem=str(problem),
+            **shell,
+        )
+    shell["symbol"] = payload["meta"]["symbol"]
+    return render(
+        "ativo.html",
+        session,
+        now,
+        "/ativo",
+        shell["symbol"],
+        meta=payload["meta"],
+        levels=payload["levels"],
+        reach=payload["reach"],
+        profile=payload["profile"],
+        problem=None,
+        **shell,
     )
 
 
