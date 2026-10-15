@@ -937,11 +937,12 @@ THEME_MIN_OUTLETS: Final = 2
 def themes(session: Session, now: datetime, hours: int, limit: int) -> Block[ThemeView]:
     """The most active themes of the last `hours`, only those worth showing."""
     since = now - timedelta(hours=hours)
+    story = func.concat(Catalyst.source, "|", Catalyst.headline)
     rows = session.execute(
         select(
             NewsTheme.id,
             NewsTheme.label,
-            func.count(func.distinct(NewsThemeItem.catalyst_id)).label("items"),
+            func.count(func.distinct(story)).label("items"),
             func.count(func.distinct(Catalyst.source)).label("outlets"),
         )
         .join(NewsThemeItem, NewsThemeItem.theme_id == NewsTheme.id)
@@ -949,10 +950,10 @@ def themes(session: Session, now: datetime, hours: int, limit: int) -> Block[The
         .where(NewsTheme.last_seen_at >= since)
         .group_by(NewsTheme.id, NewsTheme.label)
         .having(
-            func.count(func.distinct(NewsThemeItem.catalyst_id)) >= THEME_MIN_ITEMS,
+            func.count(func.distinct(story)) >= THEME_MIN_ITEMS,
             func.count(func.distinct(Catalyst.source)) >= THEME_MIN_OUTLETS,
         )
-        .order_by(func.count(func.distinct(NewsThemeItem.catalyst_id)).desc())
+        .order_by(func.count(func.distinct(story)).desc())
         .limit(limit)
     ).all()
     if not rows:

@@ -225,3 +225,77 @@ abaixo). Portão verde.
   há uma, a FRED, e depende de chave.
 - Decidir se SPY/IWM entram por outro caminho de coleta (a Alpaca serve ETF, o filtro de universo
   é que os exclui) e se o IBOV/USDBRL valem uma fonte.
+
+## Fase 4 — A tela
+
+Data: 2026-10-15. Critério de saída cumprido. Portão verde.
+
+### O que foi feito
+
+- `uv run guardrail-web` sobe em `127.0.0.1:8787`. Recusa qualquer outro `--host` (teste).
+- **Oito páginas**, não sete: `/`, `/cripto`, `/eua`, `/brasil`, `/macro`, `/mundo`, `/agenda`,
+  `/radar`. O plano diz "sete rotas" e "sete links" mas lista oito; implementei as oito.
+- FastAPI + Jinja2 (`autoescape=True`, `StrictUndefined`) + um `app.css` com as fichas da §5.2
+  (todas as cores em variáveis, nenhuma fora do `:root`, verificado por teste) + `app.js` de
+  10 linhas (recarrega a cada 60 s e guarda a rolagem). A página funciona sem o JS.
+- `sparkline.py` (30 fechamentos viram um `<polyline>`; valor fixo calculado à mão no teste),
+  `queries.py` (uma função por bloco, com teto de linhas), `health.py`, `clock.py`,
+  `format.py` (números, datas e idades em pt-BR, com sinal de menos tipográfico).
+- **Liquidez aplicada na data do dado**: mediana do giro dos 90 pregões até a última barra, piso
+  de US$ 20 M (EUA) e R$ 5 M (Brasil). Teste: papel ilíquido e papel com barra velha ficam fora.
+- **Cabeçalho em toda página:** navegação, relógio dos mercados, um ponto por grupo de fonte
+  (verde / âmbar / vermelho / vazado para "sem coletor"), contagem em texto (a cor não é o único
+  portador) e a linha de limites de risco.
+- **Nenhum bloco mudo:** cada bloco sem dado imprime faixa de aviso com motivo e a hora da
+  consulta. Teste de rota percorre as 8 páginas, com banco cheio **e** vazio, e falha se houver
+  seção sem card e sem aviso.
+- **Segurança:** CSP `default-src 'none'; style-src 'self'; script-src 'self'`, `nosniff`,
+  `no-store`, `/docs` e `/openapi.json` desligados, nenhuma rota de escrita (POST/PUT/DELETE
+  dão 405), sem CORS. Link só vira `href` se for `http`/`https` (`rel="noopener noreferrer"`).
+  Testes com manchete, título de evento e símbolo hostis (`<script>`, `{{ 7*7 }}`, SQL,
+  `javascript:`). Validei por **mutação**: desligar o autoescape e remover o filtro de esquema
+  derrubam testes.
+- Snapshot do card de ativo nos três estados (completo, sem evento, fonte falhada), com os
+  arquivos em `tests/snapshots/` lidos à mão.
+- **Agrupamento de temas** (`analysis/themes.py`), que a §4 descreve mas nenhuma fase listava:
+  sem ele `/mundo` ficaria vazio para sempre. Termos em comum (≥ 2 compartilhados e ≥ 40%),
+  janela de 48 h, rótulo pelos três termos mais frequentes. Contei **histórias** (veículo +
+  manchete), não linhas de `catalyst` (uma notícia marcada em 4 ações viraria 4 notícias). O teste
+  caiu num bug meu real: `Counter.update(dict)` soma os valores, não as chaves.
+
+### Decisões minhas, para revisão
+
+1. **O cabeçalho de risco mostra só os limites**, porque `account_state`, `position` e
+   `locked_capital` não existem (SPEC Fase 3 e §9). Mostra "capital livre, risco aberto e
+   posições do mês: ainda sem registro" em vez de um número que não tem. As constantes da §8
+   foram copiadas **sem alteração** para `engine/risk_limits.py`.
+2. **`/radar` não cumpre o plano inteiro**: sem as tabelas acima, não há posição, capital travado
+   nem data de revisão para destacar. A página diz isso numa faixa vermelha e lista os limites.
+   Fica dependente da Fase 3 da SPEC.
+3. **Relógio dos mercados:** NYSE com horário (09:30–16:00 ET, e o meio-pregão vem do calendário
+   da Alpaca); **B3 só diz se negocia hoje**, sem horário. O horário da B3 muda com o horário de
+   verão americano e eu não ia afirmar um minuto que não verifiquei.
+4. **Bloco 3 do card de ativo** é "Posicionamento" para cripto e "Volume e liquidez" para ação,
+   porque posicionamento só existe para perpétuos de cripto. Os cinco blocos seguem na mesma ordem.
+5. **"Movimento anormal"** = volume ≥ 2× a média de 20 dias (corte meu, o plano só manda
+   ordenar). A faixa de aviso do card é a de 3× do plano.
+6. **Evento do card** usa os mesmos escopos da amostra estatística (`us`/`br`); a agenda da
+   página de cripto também lista eventos globais, a do card não.
+7. **O nome do ativo não aparece** ("Solana · Binance"): `instrument` não tem coluna de nome. O
+   card mostra o símbolo e a praça. Precisaria de uma coluna nova e de preenchê-la no coletor.
+8. **Leitura de posicionamento** em uma linha: quem paga (sinal do funding) e se o open interest
+   cresce ou cai (corte de ±2%). Descreve; não diz o que o preço vai fazer.
+
+### O que a tela mostra hoje, com os dados reais (e por quê)
+
+Praticamente tudo com aviso. Não é defeito da tela, é o estado do banco: velas diárias até
+**02–03/10**, posicionamento até **04/10**, notícias até **05/10**. Os coletores não rodam
+sozinhos até a Fase 5. A tela diz isso em cada bloco ("sem dado atual · última vela de cripto é
+de 03/10, esperada 14/10; coletor de barras parado") e no cabeçalho (6 fontes vermelhas).
+
+### O que ficou pendente
+
+- Fase 5 (agendamento) resolve a defasagem dos dados.
+- Tabelas de capital, posição e contrato (SPEC Fase 3) para `/radar` e o cabeçalho.
+- Coluna `name` em `instrument`.
+- Eventos próprios de ativo (resultados, desbloqueios) seguem sem fonte: aviso permanente nos cards.
