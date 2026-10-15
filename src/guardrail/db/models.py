@@ -9,13 +9,14 @@ fractions exactly, and position sizing compounds that error.
 """
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -294,4 +295,29 @@ class SourceHealth(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
+    )
+
+
+class ApiQuota(Base):
+    """Request budget per source and period.
+
+    Two sources have a monthly or daily ceiling and an unattended loop can burn
+    it in a night. The collector reserves each call here, in the same
+    transaction as the data it writes, and refuses once the ceiling is near.
+    period is the first day of the month for monthly budgets and the day itself
+    for daily ones.
+    """
+
+    __tablename__ = "api_quota"
+    __table_args__ = (
+        CheckConstraint("used >= 0", name="used_non_negative"),
+        CheckConstraint("budget > 0", name="budget_positive"),
+    )
+
+    source: Mapped[str] = mapped_column(String(64), primary_key=True)
+    period: Mapped[date] = mapped_column(Date, primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

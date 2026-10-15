@@ -13,6 +13,7 @@ from typing import Any, Final
 
 import httpx
 import structlog
+from sqlalchemy.orm import Session
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -22,6 +23,7 @@ from tenacity import (
 
 from guardrail.collectors.binance import Kline
 from guardrail.collectors.errors import UpstreamDataError
+from guardrail.collectors.quota import CallKind, QuotaExceeded, reserve
 from guardrail.collectors.store import (
     get_or_create_instrument,
     record_failure,
@@ -37,10 +39,11 @@ log = structlog.get_logger(__name__)
 BASE_URL: Final = "https://brapi.dev/api"
 VENUE: Final = "b3"
 SOURCE: Final = "brapi.b3"
+QUOTA_SOURCE: Final = "brapi"
 TIMEFRAME: Final = "1d"
 
-# The free tier allows exactly one request at a time; more returns 429.
-MAX_CONCURRENCY: Final = 1
+# The free tier allows exactly one request at a time; more returns 429. Requests
+# are therefore made one after another and there is no concurrency setting.
 
 # The free tier serves at most three months of history. That covers the 20-day
 # high and the 20-day average volume the screen needs, with room to spare.
@@ -121,7 +124,16 @@ class BrapiClient:
         wait=wait_exponential(multiplier=2, min=2, max=20),
         reraise=True,
     )
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def _get(
+        self,
+        session: Session,
+        kind: CallKind,
+        path: str,
+        params: dict[str, Any] | None = None,
+        cost: int = 1,
+    ) -> Any:
+        # Reserved per attempt: a retry is a request the vendor counts too.
+        reserve(session, QUOTA_SOURCE, kind, cost)
         response = await self._client.get(
             f"{BASE_URL}{path}", params=params or {}, headers=self._headers
         )
@@ -130,9 +142,9 @@ class BrapiClient:
         response.raise_for_status()
         return response.json()
 
-    async def list_symbols(self) -> list[str]:
+    async def list_symbols(self, session: Session) -> list[str]:
         """Every ticker brapi serves."""
-        payload = await self._get("/available")
+        payload = await self._get(session, CallKind.CLOSE, "/available")
         stocks = (payload or {}).get("stocks")
         if not isinstance(stocks, list):
             raise UpstreamDataError(f"unexpected available payload: {type(stocks)}")
@@ -140,10 +152,16 @@ class BrapiClient:
         return [str(s) for s in stocks]
 
     async def fetch_history(
-        self, symbol: str, span: str = DEFAULT_RANGE
+        self,
+        session: Session,
+        symbol: str,
+        span: str = DEFAULT_RANGE,
+        kind: CallKind = CallKind.CLOSE,
     ) -> list[Kline]:
         """Daily bars for one ticker."""
-        payload = await self._get(f"/quote/{symbol}", {"range": span, "interval": "1d"})
+        payload = await self._get(
+            session, kind, f"/quote/{symbol}", {"range": span, "interval": "1d"}
+        )
         results = (payload or {}).get("results") or []
         if not results:
             return []
@@ -152,9 +170,22 @@ class BrapiClient:
         bars.sort(key=lambda k: k.open_time)
         return bars
 
-    async def fetch_quotes(self, symbols: list[str]) -> list[B3Quote]:
-        """Latest quote for a batch of tickers."""
-        payload = await self._get(f"/quote/{','.join(symbols)}")
+    async def fetch_quotes(
+        self,
+        session: Session,
+        symbols: list[str],
+        kind: CallKind = CallKind.OTHER,
+    ) -> list[B3Quote]:
+        """Latest quote for a batch of tickers.
+
+        Costs one request per ticker: the free tier meters tickers, not calls.
+        """
+        payload = await self._get(
+            session,
+            kind,
+            f"/quote/{','.join(symbols)}",
+            cost=max(1, len(symbols)),
+        )
         out = []
         for r in (payload or {}).get("results") or []:
             price = _decimal(r.get("regularMarketPrice"))
@@ -173,29 +204,37 @@ class BrapiClient:
 
 
 async def backfill_b3(span: str, limit: int | None) -> tuple[int, int]:
-    """Fetch and store daily history for every B3 ticker."""
-    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+    """Fetch and store daily history for every B3 ticker.
+
+    Stops cleanly, keeping what it already stored, when the request budget runs
+    out; the source is then recorded as failed so the header shows it.
+    """
     fetched = inserted = 0
+    halted: str | None = None
 
     async with httpx.AsyncClient(timeout=60.0) as http:
         client = BrapiClient(http)
-        symbols = await client.list_symbols()
+        with session_scope() as session:
+            try:
+                symbols = await client.list_symbols(session)
+            except QuotaExceeded as exc:
+                halted = str(exc)
+                symbols = []
         if limit:
             symbols = symbols[:limit]
 
-        async def one(symbol: str) -> tuple[str, list[Kline]]:
-            async with semaphore:
-                try:
-                    return symbol, await client.fetch_history(symbol, span)
-                except Exception as exc:
-                    log.warning("b3.symbol_failed", symbol=symbol, error=str(exc))
-                    return symbol, []
-
         for start in range(0, len(symbols), 40):
             batch = symbols[start : start + 40]
-            results = await asyncio.gather(*(one(s) for s in batch))
             with session_scope() as session:
-                for symbol, bars in results:
+                for symbol in batch:
+                    try:
+                        bars = await client.fetch_history(session, symbol, span)
+                    except QuotaExceeded as exc:
+                        halted = str(exc)
+                        break
+                    except Exception as exc:
+                        log.warning("b3.symbol_failed", symbol=symbol, error=str(exc))
+                        continue
                     if not bars:
                         continue
                     instrument = get_or_create_instrument(
@@ -209,9 +248,14 @@ async def backfill_b3(span: str, limit: int | None) -> tuple[int, int]:
                 total=len(symbols),
                 inserted=inserted,
             )
+            if halted:
+                break
 
     with session_scope() as session:
-        record_success(session, SOURCE)
+        if halted:
+            record_failure(session, SOURCE, f"quota: {halted}")
+        else:
+            record_success(session, SOURCE)
     return fetched, inserted
 
 
