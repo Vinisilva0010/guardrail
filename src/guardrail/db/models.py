@@ -566,3 +566,20 @@ class NewsThemeAsset(Base):
         ForeignKey("instrument.id", ondelete="CASCADE"), primary_key=True
     )
     move_pct: Mapped[Decimal] = mapped_column(STAT, nullable=False)
+
+
+class EventKindPattern(Base):
+    """Maps an event title to its kind. Data, not code (PLANO Phase 2 item 1).
+
+    Patterns are Python regular expressions matched case-insensitively against
+    the title; the lowest priority number that matches wins. A title that
+    matches nothing is stored as kind 'other' rather than guessed.
+    """
+
+    __tablename__ = "event_kind_pattern"
+    __table_args__ = (UniqueConstraint("pattern"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[EventKind] = mapped_column(EVENT_KIND_ENUM, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)

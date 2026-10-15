@@ -93,7 +93,11 @@ def test_enums_are_stored_as_lowercase_values(session: Session) -> None:
     session.flush()
 
     row = session.execute(
-        text("SELECT kind::text, scope::text, impact::text FROM scheduled_event")
+        text(
+            "SELECT kind::text, scope::text, impact::text FROM scheduled_event "
+            "WHERE identity_key = :key"
+        ),
+        {"key": KEY},
     ).one()
 
     assert tuple(row) == ("rate_decision", "us", "high")
@@ -156,10 +160,12 @@ def test_deleting_an_instrument_removes_its_events(session: Session) -> None:
     session.delete(instrument)
     session.flush()
 
-    assert (
-        session.execute(select(func.count()).select_from(ScheduledEvent)).scalar_one()
-        == 0
-    )
+    remaining = session.execute(
+        select(func.count())
+        .select_from(ScheduledEvent)
+        .where(ScheduledEvent.instrument_id == instrument.id)
+    ).scalar_one()
+    assert remaining == 0
 
 
 def test_expectation_rejects_negative_dispersion(session: Session) -> None:
