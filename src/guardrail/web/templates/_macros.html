@@ -1,0 +1,7 @@
+{% macro notice(n, now) %}
+<div class="notice notice-{{ n.kind }}" role="note">{{ n.text }} <span class="stamp">· consultado às {{ now|clock }}</span></div>
+{% endmacro %}
+
+{% macro blocknotice(blk, now) %}
+{% if blk.notice %}{{ notice(blk.notice, now) }}{% endif %}
+{% endmacro %}

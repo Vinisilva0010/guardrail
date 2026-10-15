@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h2>Decisões e divulgações dos próximos 30 dias</h2>
+{{ m.blocknotice(events, now) }}
+<div class="grid">
+  {% for e in events.rows %}{% include "_card_event.html" %}{% endfor %}
+</div>
+
+<h2>Brasil</h2>
+{{ m.blocknotice(brazil, now) }}
+<div class="grid">
+  {% for line in brazil.rows %}
+  <article class="card"><div class="blk">
+    <div class="label">{{ line.label }}</div>
+    <div class="price num">{{ line.value }}</div>
+    <div class="sub">{{ line.detail }}</div>
+  </div></article>
+  {% endfor %}
+</div>
+
+<h2>O que esta página não tem</h2>
+{% for market, reason in gaps.items() %}
+<div class="notice notice-warn" role="note">{{ reason }} <span class="stamp">· consultado às {{ now|clock }}</span></div>
+{% endfor %}
+{% endblock %}

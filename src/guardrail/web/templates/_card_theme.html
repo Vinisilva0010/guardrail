@@ -1,0 +1,28 @@
+<article class="card theme">
+  <div class="blk">
+    <div class="row">
+      <span><span class="label">Tema</span> <span class="title">{{ t.label }}</span></span>
+      <span class="muted">{{ t.n_items }} notícias · {{ t.n_outlets }} veículos</span>
+    </div>
+  </div>
+  {% if t.assets %}
+  <div class="blk">
+    <div class="label">Movendo junto</div>
+    <div class="num">
+      {% for symbol, move in t.assets %}
+      <span class="{{ move|direction }}">{{ symbol }} {{ move|percent(1) }}</span>{% if not loop.last %}&nbsp;&nbsp;{% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="blk">
+    {% for h in t.headlines %}
+    {% set link = h.url|href %}
+    <div>
+      {% if link %}<a href="{{ link }}" rel="noopener noreferrer" target="_blank">“{{ h.title|truncate(90) }}”</a>{% else %}“{{ h.title|truncate(90) }}”{% endif %}
+      <span class="sub">— {{ h.outlet }} · {{ h.ts|age(now) }}</span>
+    </div>
+    {% endfor %}
+    {% if t.extra %}<div class="sub">+ {{ t.extra }} notícias</div>{% endif %}
+  </div>
+</article>

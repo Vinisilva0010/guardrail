@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h2>Agenda dos próximos 14 dias</h2>
+{% if events_notice %}{{ m.notice(events_notice, now) }}{% endif %}
+<div class="grid">
+  {% for e in events %}{% include "_card_event.html" %}{% endfor %}
+</div>
+
+{% if positioning is not none %}
+<h2>Posicionamento</h2>
+{{ m.blocknotice(positioning, now) }}
+<div class="grid">
+  {% for card in positioning.rows %}{% include "_card_asset.html" %}{% endfor %}
+</div>
+{% endif %}
+
+{% if brazil is not none %}
+<h2>Selic, IPCA e projeções Focus</h2>
+{{ m.blocknotice(brazil, now) }}
+<div class="grid">
+  {% for line in brazil.rows %}
+  <article class="card"><div class="blk">
+    <div class="label">{{ line.label }}</div>
+    <div class="price num">{{ line.value }}</div>
+    <div class="sub">{{ line.detail }}</div>
+  </div></article>
+  {% endfor %}
+</div>
+<div class="notice notice-warn" role="note">Data da próxima reunião do Copom: fonte indisponível (sem API acessível). <span class="stamp">· consultado às {{ now|clock }}</span></div>
+{% endif %}
+
+<h2>Movimento anormal</h2>
+{{ m.blocknotice(abnormal, now) }}
+<div class="grid">
+  {% for card in abnormal.rows %}{% include "_card_asset.html" %}{% endfor %}
+</div>
+
+<h2>Ativos com evento nos próximos 7 dias</h2>
+{{ m.blocknotice(with_event, now) }}
+<div class="grid">
+  {% for card in with_event.rows %}{% include "_card_asset.html" %}{% endfor %}
+</div>
+{% endblock %}

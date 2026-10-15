@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<div class="notice notice-alert" role="note">sem dado · posições, capital travado e datas de revisão ainda não são registrados (tabelas de contrato, posição e capital da SPEC §8 e §9 não existem). Nenhuma revisão vencida pode ser conferida aqui. <span class="stamp">· consultado às {{ now|clock }}</span></div>
+
+<h2>Limites de risco (SPEC §8)</h2>
+<article class="card"><div class="blk">
+  <dl class="facts">
+    {% for name, value in limits %}
+    <dt>{{ name }}</dt><dd>{{ value }}</dd>
+    {% endfor %}
+    <dt>Alavancagem</dt><dd>não suportada</dd>
+    <dt>Stop</dt><dd>obrigatório; afastar é bloqueado</dd>
+  </dl>
+</div></article>
+{% endblock %}

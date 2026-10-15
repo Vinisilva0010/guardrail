@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h2>Próximas 72 horas</h2>
+{{ m.blocknotice(timeline, now) }}
+{% if timeline.rows %}
+<div class="timeline">
+  <svg viewBox="0 0 1000 130" role="img" aria-label="Eventos de alto impacto nas próximas 72 horas">
+    <line class="tl-axis" x1="0" y1="108" x2="1000" y2="108"/>
+    {% for hours in (0, 12, 24, 36, 48, 60, 72) %}
+    {% set x = hours / 72 * 1000 %}
+    <line class="tl-tick" x1="{{ x }}" y1="104" x2="{{ x }}" y2="112"/>
+    <text class="tl-soft" x="{{ x }}" y="126" text-anchor="{{ 'start' if hours == 0 else ('end' if hours == 72 else 'middle') }}">{{ "agora" if hours == 0 else "+" ~ hours ~ " h" }}</text>
+    {% endfor %}
+    {% for e, pct, lane in timeline.rows %}
+    {% set x = pct * 10 %}
+    {% set y = 24 + lane * 26 %}
+    <line class="tl-stem" x1="{{ x }}" y1="{{ y }}" x2="{{ x }}" y2="108"/>
+    <circle class="tl-mark" cx="{{ x }}" cy="{{ y }}" r="4"/>
+    <text class="tl-text" x="{{ x + (-8 if x > 800 else 8) }}" y="{{ y + 4 }}" text-anchor="{{ 'end' if x > 800 else 'start' }}"><title>{{ e.title }} · {{ e.starts_at|when(e.has_time) }}</title>{{ e.title|truncate(26, true, "…") }}</text>
+    {% endfor %}
+  </svg>
+</div>
+{% endif %}
+
+<h2>Próximos 7 dias</h2>
+{% if events %}
+<div class="grid">
+  {% for e in events %}{% include "_card_event.html" %}{% endfor %}
+</div>
+{% else %}
+{{ m.notice(events_notice, now) }}
+{% endif %}
+
+<h2>Temas do mundo nas últimas 24 horas</h2>
+{{ m.blocknotice(themes, now) }}
+<div class="grid">
+  {% for t in themes.rows %}{% include "_card_theme.html" %}{% endfor %}
+</div>
+
+<h2>Movimento anormal de hoje</h2>
+{% for label, n in card_notices %}
+<div class="notice notice-{{ n.kind }}" role="note"><strong>{{ label }}:</strong> {{ n.text }} <span class="stamp">· consultado às {{ now|clock }}</span></div>
+{% endfor %}
+<div class="grid">
+  {% for card in cards %}{% include "_card_asset.html" %}{% endfor %}
+</div>
+{% endblock %}

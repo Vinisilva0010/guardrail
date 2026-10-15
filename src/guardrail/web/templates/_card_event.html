@@ -1,0 +1,35 @@
+<article class="card event">
+  {% if e.impact.value == "high" %}
+  <div class="band band-row"><span>ALTO IMPACTO</span><span>{{ e.starts_at|when(e.has_time) }}</span></div>
+  {% else %}
+  <div class="band-plain"><span>{{ "IMPACTO MÉDIO" if e.impact.value == "medium" else "IMPACTO BAIXO" }}</span><span>{{ e.starts_at|when(e.has_time) }}</span></div>
+  {% endif %}
+  <div class="blk">
+    <div class="label">{{ e.kind|kind_label }}{% if e.symbol %} · {{ e.symbol }}{% endif %}</div>
+    <div class="row">
+      <span class="title">{{ e.title }}</span>
+      <span class="chip">{{ e.starts_at|countdown(e.has_time, now) }}</span>
+    </div>
+    {% if e.date_is_estimated %}<div class="sub">data estimada, ainda não confirmada</div>{% endif %}
+  </div>
+  <div class="blk">
+    {% if e.expected is not none or e.previous is not none %}
+    <div class="row num">
+      <span>{% if e.expected is not none %}Esperado {{ e.expected|figure(e.unit) }}{% else %}Consenso não publicado{% endif %}</span>
+      <span>{% if e.previous is not none %}Anterior {{ e.previous|figure(e.unit) }}{% endif %}</span>
+    </div>
+    {% else %}
+    <div class="muted">sem consenso nem valor anterior publicados pela fonte</div>
+    {% endif %}
+    {% if e.affects %}<div class="sub">Afeta {{ e.affects|join(" · ") }}</div>{% endif %}
+  </div>
+  {% if e.history %}
+  <div class="blk">
+    {% if e.history.displayable %}
+    <div class="num">Nas {{ e.history.n }} ocorrências anteriores, {{ e.history.reference }}: mediana ±{{ e.history.median_abs|percent(1, false) }}</div>
+    {% else %}
+    <div class="muted">{{ e.history.insufficient_text }} · {{ e.history.reference }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</article>

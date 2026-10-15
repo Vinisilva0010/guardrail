@@ -12,6 +12,7 @@ dependencies = [
     "apscheduler>=3.11.3",
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
+    "jinja2>=3.1.6",
     "polars>=1.44.2",
     "psycopg[binary]>=3.3.6",
     "pydantic>=2",
@@ -25,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 guardrail = "guardrail:main"
+guardrail-web = "guardrail.web.app:main"
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
@@ -62,6 +64,8 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/*" = ["E501", "I001", "W291", "UP007", "UP035"]
+# Tests assert on the typographic minus and em dash the screen prints.
+"tests/*" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<div class="filters">
+  <span class="label">Mercado</span>
+  {% for mk in markets %}
+  <a href="/agenda?mercado={{ mk }}&amp;impacto={{ impacto }}"{% if mk == mercado %} aria-current="true"{% endif %}>{{ {"all": "todos", "global": "global", "us": "EUA", "br": "Brasil", "crypto": "cripto"}[mk] }}</a>
+  {% endfor %}
+  <span class="label">Impacto</span>
+  {% for im in impacts %}
+  <a href="/agenda?mercado={{ mercado }}&amp;impacto={{ im }}"{% if im == impacto %} aria-current="true"{% endif %}>{{ {"all": "todos", "high": "alto", "medium": "médio", "low": "baixo"}[im] }}</a>
+  {% endfor %}
+</div>
+<div class="notice notice-warn" role="note">{{ horizon_note }}. <span class="stamp">· consultado às {{ now|clock }}</span></div>
+{% if notice %}{{ m.notice(notice, now) }}{% endif %}
+<p class="muted">{{ total }} eventos nos próximos 90 dias.</p>
+{% for day, items in days.items() %}
+<div class="day">{{ day }}</div>
+{% for e in items %}
+<div class="item">
+  <span class="t num">{{ (e.starts_at|clock) if e.has_time else "dia todo" }}</span>
+  <span><span class="title">{{ e.title }}</span> <span class="sub">{{ e.kind|kind_label }}{% if e.symbol %} · {{ e.symbol }}{% endif %}</span>
+    {% if e.expected is not none %}<span class="sub num"> · esperado {{ e.expected|figure(e.unit) }}</span>{% endif %}</span>
+  <span class="chip">{{ {"high": "alto", "medium": "médio", "low": "baixo"}[e.impact.value] }}</span>
+</div>
+{% endfor %}
+{% endfor %}
+{% endblock %}

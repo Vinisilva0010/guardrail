@@ -1,0 +1,89 @@
+{% import "_macros.html" as m %}
+<article class="card asset">
+  {% if card.volume_warning %}
+  <div class="band">volume {{ card.rvol|number(1) }}x a média de 20 dias</div>
+  {% endif %}
+  {% if card.stale %}
+  <div class="band">dado velho · fechamento de {{ card.last_day|short_date }}, esperado {{ card.expected_day|short_date }}</div>
+  {% endif %}
+
+  <div class="blk">
+    <div class="row">
+      <span class="sym">{{ card.label }}</span>
+      <span class="chg {{ card.change|direction }}">{{ card.change|arrow }} {{ card.change|percent(1) }}</span>
+    </div>
+    <div class="sub">{{ card.symbol }} · {{ venue_label(card.venue) }}</div>
+    <div class="price-row">
+      <span class="price num">{{ card.last_close|money(card.currency) }}</span>
+      {{ spark(card.closes) }}
+    </div>
+    <div class="sub">30 dias · fechamento de {{ card.last_day|short_date }}</div>
+  </div>
+
+  <div class="blk">
+    <div class="label">Próximo evento</div>
+    {% if card.next_event %}
+    <div class="row">
+      <span>{{ card.next_event.kind|kind_label }} · {{ card.next_event.title }}</span>
+      <span class="chip">{{ card.next_event.starts_at|countdown(card.next_event.has_time, now) }}</span>
+    </div>
+    {% else %}
+    {{ m.notice(card.event_notice, now) }}
+    {% endif %}
+  </div>
+
+  {% if card.positioning %}
+  {% set p = card.positioning %}
+  <div class="blk">
+    <div class="label">Posicionamento</div>
+    {% if p.notice %}{{ m.notice(p.notice, now) }}{% endif %}
+    {% if p.funding is not none or p.oi_change is not none %}
+    <div class="row num">
+      <span>Funding {{ p.funding|percent(3) }}{% if p.funding_ts %} <span class="stamp">{{ p.funding_ts|age(now) }}</span>{% endif %}</span>
+      <span>OI 24h {{ p.oi_change|percent(1) }}{% if p.oi_ts %} <span class="stamp">{{ p.oi_ts|age(now) }}</span>{% endif %}</span>
+    </div>
+    {% endif %}
+    {% if p.reading %}<div class="reading">{{ p.reading }}</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="blk">
+    <div class="label">Volume e liquidez</div>
+    <div class="row num">
+      <span>Volume relativo {{ card.rvol|number(1) if card.rvol is not none else "—" }}x</span>
+      <span>Liquidez 90 d {{ card.turnover|compact_money(card.currency) }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="blk">
+    {% if card.history is none %}
+    <div class="label">Quando isso aconteceu antes</div>
+    <div class="muted">sem evento marcado para comparar</div>
+    {% else %}
+    <div class="row">
+      <span class="label">Quando isso aconteceu antes</span>
+      <span class="label num">n={{ card.history.n }}</span>
+    </div>
+    {% if card.history.displayable %}
+    <div class="row num">
+      <span>mediana {{ card.history.median_signed|percent(1) }}</span>
+      <span>faixa 80%  {{ card.history.p10|percent(1) }} a {{ card.history.p90|percent(1) }}</span>
+    </div>
+    {% else %}
+    <div class="muted">{{ card.history.insufficient_text }}</div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="blk">
+    {% if card.headline %}
+    {% set link = card.headline.url|href %}
+    <blockquote>
+      {% if link %}<a href="{{ link }}" rel="noopener noreferrer" target="_blank">“{{ card.headline.title }}”</a>{% else %}“{{ card.headline.title }}”{% endif %}
+    </blockquote>
+    <div class="sub">{{ card.headline.outlet }} · {{ card.headline.ts|age(now) }}</div>
+    {% else %}
+    {{ m.notice(card.headline_notice, now) }}
+    {% endif %}
+  </div>
+</article>

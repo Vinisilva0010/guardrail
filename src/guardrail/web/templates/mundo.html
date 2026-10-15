@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<h2>Temas das últimas 48 horas</h2>
+{{ m.blocknotice(themes, now) }}
+<div class="grid">
+  {% for t in themes.rows %}{% include "_card_theme.html" %}{% endfor %}
+</div>
+{% endblock %}
