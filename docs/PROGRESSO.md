@@ -97,3 +97,75 @@ de `impact` inválido. Portão verde, 155 testes.
   código").
 - `event_impact_stat.pct_positive` e os quantis usam `NUMERIC(18,8)`; a unidade (fração, não
   percentual) será fixada no cálculo da Fase 3 e testada com valor fixo.
+
+## Fase 2 — Coletores de evento
+
+Data: 2026-10-15. Critério de saída cumprido, com uma ressalva (abaixo). Portão verde.
+
+### O que foi feito
+
+| Item | Resultado |
+|---|---|
+| 1. ForexFactory | Coletor feito (`forexfactory.py`). Roda e é idempotente no banco real. |
+| 2. Alpha Vantage | **Sem coletor**: `ALPHAVANTAGE_API_KEY` ausente (regra 30). |
+| 3. DefiLlama | **Sem coletor**: HTTP 402, fonte paga (regras 22 e 29). Fora do projeto. |
+| 4. BCB | SGS (Selic meta, IPCA) e Focus (IPCA, Selic, PIB, Câmbio) feitos (`bcb.py`). **Datas do Copom: indisponível** (ver `FONTES.md`). |
+| 5. FRED | **Sem coletor**: `FRED_API_KEY` ausente (regra 30). |
+| 6. Vencimentos | Opção (3ª sexta, recuada se for feriado dos EUA) e futuro (último dia útil), em `calendar_rules.py`, fonte `manual`. |
+| 7. Feriados | EUA derivados do `/v2/calendar` da Alpaca (`us_calendar.py`, inclui meio-pregão); B3 por tabela versionada (`reference/b3_holidays.json`), conferida na página oficial da B3 em 2026-10-15. |
+
+**Verificação no banco real** (`scheduled_event`, eventos futuros): 3 fontes distintas
+(`alpaca` 8, `forexfactory` 56, `manual` 17), até 167 dias à frente, 0 `identity_key`
+duplicada. Cada coletor rodou duas vezes seguidas: a segunda insere 0 linha.
+
+Infraestrutura nova: `collectors/events.py` (chaves, upsert com COALESCE, reconciliação),
+tabela `event_kind_pattern` semeada por migration (o tipo do evento sai de padrões no banco,
+não de `if`), migration `a93d5e7f1c46`.
+
+### Desvios do plano (decisões minhas, para revisão)
+
+1. **`identity_key` de calendário.** A fórmula da §4 (`fonte|tipo|título|mês`) perdia evento em
+   silêncio. Corrigi: o país/moeda entra no texto da chave (`CPI m/m` de USD e de EUR são
+   eventos diferentes); a granularidade é **mês** só para `rate_decision`, `inflation_print` e
+   `gdp_print`; **minuto** para `central_bank_speech` (a Lagarde falou duas vezes no mesmo dia
+   no feed real); **dia** para o resto (pedidos de seguro-desemprego e estoques de petróleo
+   são semanais). Efeito colateral: evento de chave por dia que é adiado vira linha nova, então
+   `drop_vanished` apaga do banco o evento futuro da mesma fonte que sumiu do feed, mas só quando
+   o documento veio íntegro (nenhuma linha ilegível). Feed vazio ou parcial nunca apaga nada.
+2. **Feriados do ForexFactory são descartados** (a hora vem em outro fuso e não dá uma data
+   confiável); feriados vêm dos itens 7.
+3. **Tabela B3:** o plano pede tabela versionada; usei a lista da B3 conferida por busca (URL e
+   data no próprio JSON). Ela só cobre 2026. O coletor marca `calendar.rules` como falha em
+   `source_health` quando falta um ano a menos de 60 dias de começar (hoje isso acontece em
+   2026-11-02 para 2027) — é um lembrete deliberado, não um defeito.
+4. **Impacto dos vencimentos** (`medium` nos meses de trimestre, `low` nos outros): regra
+   minha, o plano não define.
+5. **Ponto SGS com data futura é descartado** (a série 432 traz semanas à frente).
+
+### O que falhou / bugs achados no caminho
+
+- **Colisão real de chave** achada rodando o coletor no feed vivo: duas falas da Lagarde no mesmo
+  dia colapsavam numa linha. Corrigido (chave por minuto) com teste. Como a chave mudou depois da
+  primeira carga, ficaram 17 pares de falas **passadas** duplicadas (a reconciliação só toca
+  futuro). Apaguei à mão a linha de chave antiga de cada par (17 linhas, re-coletáveis) e conferi
+  0 duplicata restante. Foi um artefato de uma troca de formato no meio da fase; não se repete.
+- **Testes quebraram quando o banco real ganhou dados** (contavam "todas as linhas"): agora cada
+  teste de evento usa uma `SOURCE` privada e filtra por ela.
+- ForexFactory respondeu **429** depois de 5 requisições minhas em ~10 min (ver `FONTES.md`).
+
+### O que ficou pendente
+
+- **Ressalva do critério de saída:** os "60 dias de eventos futuros" valem para as três fontes
+  somadas. O ForexFactory cobre 1 semana; o que passa de ~3 dias é só feriado e vencimento.
+  **Não há data futura de Fed, CPI ou resultado de empresa além de uma semana.** Para ter, faltam
+  FRED, Alpha Vantage (chaves) e o calendário do Copom (sem API). A tela da Fase 4 tem de
+  mostrar isso e não "nenhum evento".
+- **Histórico para a Fase 3:** `event_impact_stat` precisa de reuniões passadas (o exemplo do
+  plano usa n=11 do Fed). Nenhuma fonte desta fase traz histórico de evento: o ForexFactory
+  é só a semana corrente. A tabela só acumula daqui para a frente, então a maior parte das
+  estatísticas ficará com `n < 8` ("histórico insuficiente") por meses. Isso é o comportamento
+  honesto, mas precisa de decisão do operador sobre uma fonte de histórico (ex.: FRED, quando
+  houver chave).
+- Meio-pregão da B3 (ex.: quarta-feira de cinzas, abertura às 13h) não é coletado.
+- A tabela da cota de requisição (`api_quota`) não é usada por estes coletores porque nenhuma
+  dessas fontes tem teto declarado; o agendador da Fase 5 é quem limita a cadência.

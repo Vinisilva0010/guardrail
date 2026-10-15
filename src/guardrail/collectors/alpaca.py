@@ -240,6 +240,22 @@ class AlpacaClient:
             raise UpstreamDataError(f"expected an object, got {type(payload)}")
         return payload
 
+    async def fetch_market_calendar(
+        self, start: date, end: date
+    ) -> list[dict[str, Any]]:
+        """Trading days between two dates, with open and close times.
+
+        Lists only the days the market is open: a weekday that is absent is a
+        holiday, and a close before 16:00 is an early close.
+        """
+        payload = await self._get(
+            f"{TRADING_URL}/v2/calendar",
+            {"start": start.isoformat(), "end": end.isoformat()},
+        )
+        if not isinstance(payload, list):
+            raise UpstreamDataError(f"expected a list of days, got {type(payload)}")
+        return payload
+
     async def fetch_news_page(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return one page of the news feed, unparsed."""
         payload = await self._get(f"{DATA_URL}/v1beta1/news", params)

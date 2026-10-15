@@ -1,0 +1,24 @@
+{
+  "source": "B3 trading calendar",
+  "source_url": "https://www.b3.com.br/pt_br/noticias/calendario-de-negociacao-da-b3-confira-o-funcionamento-da-bolsa-em-2026.htm",
+  "verified_on": "2026-10-15",
+  "note": "Days with no trading session. Add a year when B3 publishes it; the collector reports a missing year before it is needed.",
+  "years": {
+    "2026": [
+      {"date": "2026-01-01", "name": "Confraternização Universal"},
+      {"date": "2026-02-16", "name": "Carnaval"},
+      {"date": "2026-02-17", "name": "Carnaval"},
+      {"date": "2026-04-03", "name": "Sexta-feira Santa"},
+      {"date": "2026-04-21", "name": "Tiradentes"},
+      {"date": "2026-05-01", "name": "Dia do Trabalho"},
+      {"date": "2026-06-04", "name": "Corpus Christi"},
+      {"date": "2026-09-07", "name": "Independência do Brasil"},
+      {"date": "2026-10-12", "name": "Nossa Senhora Aparecida"},
+      {"date": "2026-11-02", "name": "Finados"},
+      {"date": "2026-11-20", "name": "Consciência Negra"},
+      {"date": "2026-12-24", "name": "Véspera de Natal"},
+      {"date": "2026-12-25", "name": "Natal"},
+      {"date": "2026-12-31", "name": "Véspera de Ano Novo"}
+    ]
+  }
+}
