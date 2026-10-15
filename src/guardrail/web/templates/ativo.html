@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>{{ symbol }}{% if meta %} <small>{{ meta.venue }} · {{ timeframe }} · {{ meta.bars }} velas</small>{% endif %}</h2>
+<h2>{{ symbol }}{% if meta %} <small>{{ meta.venue }} · {{ meta.timeframe }} · {{ meta.bars }} velas</small>{% endif %}</h2>
 
 <p class="switch">
   {% for s in symbols %}
-  <a href="/ativo/{{ s }}?timeframe={{ timeframe }}"{% if s == symbol %} class="on"{% endif %}>{{ s }}</a>
+  <a href="/ativo/{{ s }}?faixa={{ faixa }}"{% if s == symbol %} class="on"{% endif %}>{{ s }}</a>
   {% endfor %}
   <span class="sep">·</span>
-  {% for tf in timeframes %}
-  <a href="/ativo/{{ symbol }}?timeframe={{ tf }}"{% if tf == timeframe %} class="on"{% endif %}>{{ tf }}</a>
+  {% for key, label in ranges %}
+  <a href="/ativo/{{ symbol }}?faixa={{ key }}"{% if key == faixa %} class="on"{% endif %}>{{ label }}</a>
   {% endfor %}
+  <span class="sep">·</span>
+  <a href="/?ativo={{ symbol }}&faixa={{ faixa }}">voltar para Hoje</a>
 </p>
 
 {% if problem %}
@@ -25,7 +27,7 @@
   <span>último fechamento · {{ meta.last_ts[:16] }} UTC</span>
 </p>
 
-<div id="chart" class="chart" data-symbol="{{ symbol }}" data-timeframe="{{ timeframe }}"></div>
+<div id="chart" class="chart" data-symbol="{{ symbol }}" data-faixa="{{ faixa }}"></div>
 <div id="rsi" class="chart chart-rsi"></div>
 <p class="note">Vela e volume · EMA 21 em azul e EMA 50 em ocre · RSI 14 no painel de baixo, com 30, 50 e 70 marcados · linhas tracejadas: níveis com 2 ou mais toques, ponto de controle do volume e alcance de 20 dias.</p>
 

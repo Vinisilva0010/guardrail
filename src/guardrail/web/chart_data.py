@@ -34,6 +34,30 @@ EMA_SLOW: Final = 50
 HORIZONS: Final = (1, 5, 20)
 MAX_LEVELS: Final = 12
 
+# What the range buttons mean. Each one is a timeframe and how many bars of it,
+# chosen so the window is the length its name claims: a week of hourly bars, a
+# month of four-hour bars, then daily bars for the longer views.
+RANGES: Final = {
+    "semana": ("1h", 168),
+    "mes": ("4h", 180),
+    "trimestre": ("1d", 90),
+    "ano": ("1d", 365),
+}
+RANGE_LABELS: Final = (
+    ("semana", "1 semana"),
+    ("mes", "1 mês"),
+    ("trimestre", "3 meses"),
+    ("ano", "1 ano"),
+)
+DEFAULT_RANGE: Final = "mes"
+
+
+def resolve_range(key: str) -> tuple[str, int]:
+    """The timeframe and bar count behind a range name."""
+    if key not in RANGES:
+        raise ValueError(f"range must be one of {tuple(RANGES)}")
+    return RANGES[key]
+
 
 class UnknownSymbol(LookupError):
     """No instrument with that symbol, or no candles for that timeframe."""

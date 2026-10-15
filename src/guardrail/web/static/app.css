@@ -213,3 +213,19 @@ table.reach .down { color: var(--down); }
   border: 1px solid var(--alert-line); border-radius: var(--radius);
   padding: 8px 12px; font-size: 13px;
 }
+
+/* --- live price strip ---------------------------------------------------- */
+
+.live {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+  padding: 7px 0; border-top: 1px solid var(--line-soft);
+  font-family: var(--mono); font-size: 13px;
+}
+.live .sym { font-weight: 600; letter-spacing: .02em; }
+.live .px { font-weight: 600; }
+.live .chg.up { color: var(--up); }
+.live .chg.down { color: var(--down); }
+.live .range { color: var(--ink-soft); font-size: 12px; }
+.live .live-state { color: var(--ink-soft); font-size: 12px; }
+.live .live-state.bad { color: var(--alert-ink); }
+.live .tick { color: var(--ink-soft); font-size: 11px; }

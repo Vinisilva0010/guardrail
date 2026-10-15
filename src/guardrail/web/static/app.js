@@ -2,6 +2,9 @@
 // position. On the asset page: draw the chart and refresh it in place, because
 // reloading the page would throw away the zoom and the crosshair.
 (function () {
+  var strip = document.getElementById("live");
+  if (strip) { startLive(strip); }
+
   var host = document.getElementById("chart");
   if (host) {
     loadLibrary(host);
@@ -17,6 +20,54 @@
     try { sessionStorage.setItem(key, String(window.scrollY)); } catch (e) { /* ignore */ }
     location.reload();
   }, 60000);
+
+  // The price strip. Five seconds is the refresh the server caches for, so
+  // polling faster would return the same numbers and cost nothing but noise.
+  function startLive(el) {
+    function paint() {
+      fetch("/api/live", { headers: { Accept: "application/json" } })
+        .then(function (r) {
+          if (!r.ok) { throw new Error("HTTP " + r.status); }
+          return r.json();
+        })
+        .then(function (d) {
+          while (el.firstChild) { el.removeChild(el.firstChild); }
+          d.quotes.forEach(function (q) {
+            el.appendChild(part("sym", q.symbol.replace("USDT", "")));
+            el.appendChild(part("px", format(q.last)));
+            el.appendChild(part(
+              "chg " + (q.change_pct >= 0 ? "up" : "down"),
+              (q.change_pct >= 0 ? "+" : "") + q.change_pct.toFixed(2) + "% 24h"
+            ));
+            el.appendChild(part("range", "min " + format(q.low) + " · max " + format(q.high)));
+          });
+          var state = d.error
+            ? "exchange fora do ar há " + Math.round(d.age_seconds) + "s: " + d.error
+            : (d.stale ? "preço parado há " + Math.round(d.age_seconds) + "s" : "ao vivo");
+          el.appendChild(part("live-state" + (d.error || d.stale ? " bad" : ""), state));
+        })
+        .catch(function (err) {
+          while (el.firstChild) { el.removeChild(el.firstChild); }
+          el.appendChild(part("live-state bad", "preço ao vivo indisponível: " + err.message));
+        });
+    }
+
+    function part(cls, text) {
+      var span = document.createElement("span");
+      span.className = cls;
+      span.textContent = text;
+      return span;
+    }
+
+    function format(value) {
+      if (value >= 1000) { return value.toFixed(0); }
+      if (value >= 1) { return value.toFixed(2); }
+      return value.toFixed(5);
+    }
+
+    paint();
+    setInterval(paint, 5000);
+  }
 
   // The library is only fetched on the page that needs it, and from this same
   // server: the content policy allows no other origin.
@@ -92,7 +143,7 @@
     var drawn = [];
     function load(first) {
       var url = "/api/chart/" + encodeURIComponent(el.dataset.symbol) +
-                "?timeframe=" + encodeURIComponent(el.dataset.timeframe);
+                "?faixa=" + encodeURIComponent(el.dataset.faixa);
       fetch(url, { headers: { Accept: "application/json" } })
         .then(function (r) {
           if (!r.ok) { throw new Error("HTTP " + r.status); }

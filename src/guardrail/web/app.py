@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from guardrail import config
 from guardrail.db.models import EventImpact, EventScope
 from guardrail.db.session import get_session_factory
-from guardrail.web import chart_data, coverage, health, queries
+from guardrail.web import chart_data, coverage, health, live, queries
 from guardrail.web import clock as market_clock
 from guardrail.web import format as fmt
 from guardrail.web.sparkline import sparkline
@@ -106,6 +106,12 @@ def get_session() -> Iterator[Session]:
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+# Query parameters shared by the pages that carry a chart. Defined here, above
+# the first route that annotates with them: an annotation is evaluated when the
+# function is defined, so a name declared further down does not exist yet.
+Range = Annotated[str, Query(pattern="^(semana|mes|trimestre|ano)$")]
+SymbolQuery = Annotated[str, Query(pattern="^[A-Za-z0-9._-]{1,32}$")]
 
 app = FastAPI(
     title="Guardrail",
@@ -193,9 +199,21 @@ def _merge_abnormal(
 
 
 @app.get("/", response_class=HTMLResponse)
-def today(session: SessionDep) -> HTMLResponse:
-    """The page for opening in the morning."""
+def today(
+    session: SessionDep,
+    ativo: SymbolQuery = "BTCUSDT",
+    faixa: Range = chart_data.DEFAULT_RANGE,
+) -> HTMLResponse:
+    """The page for opening in the morning: the chart first, then the agenda."""
     now = utcnow()
+    # Checked before rendering: an empty chart box with no message reads as a
+    # flat market instead of a missing series.
+    timeframe, limit = chart_data.resolve_range(faixa)
+    chart_problem: str | None = None
+    try:
+        chart_data.load_bars(session, ativo, timeframe, limit)
+    except (chart_data.UnknownSymbol, ValueError) as problem:
+        chart_problem = str(problem)
     cards, notices = _merge_abnormal(session, now)
     events = queries.decorate(
         session, queries.upcoming_events(session, now, WEEK, limit=14)
@@ -212,6 +230,11 @@ def today(session: SessionDep) -> HTMLResponse:
         themes=queries.themes(session, now, hours=24, limit=3),
         cards=cards,
         card_notices=notices,
+        symbol=ativo.upper(),
+        chart_problem=chart_problem,
+        faixa=faixa,
+        ranges=chart_data.RANGE_LABELS,
+        symbols=CHART_SYMBOLS,
     )
 
 
@@ -382,14 +405,13 @@ def radar(session: SessionDep) -> HTMLResponse:
 # Shown as quick links on the asset page. Crypto only for now: these are the
 # three symbols with intraday candles stored.
 CHART_SYMBOLS: Final = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
-Timeframe = Annotated[str, Query(pattern="^(1h|4h|1d)$")]
 
 
 @app.get("/api/chart/{symbol}")
 def chart_api(
     session: SessionDep,
     symbol: str,
-    timeframe: Timeframe = "1d",
+    faixa: Range = chart_data.DEFAULT_RANGE,
 ) -> JSONResponse:
     """Candles, indicators and levels for one symbol, as JSON.
 
@@ -397,8 +419,9 @@ def chart_api(
     is still read-only and still same-origin: the chart on /ativo is its only
     caller.
     """
+    timeframe, limit = chart_data.resolve_range(faixa)
     try:
-        payload = chart_data.build(session, symbol, timeframe, utcnow())
+        payload = chart_data.build(session, symbol, timeframe, utcnow(), limit)
     except chart_data.UnknownSymbol as missing:
         raise HTTPException(status_code=404, detail=str(missing)) from missing
     except ValueError as bad:
@@ -410,7 +433,7 @@ def chart_api(
 def asset(
     session: SessionDep,
     symbol: str,
-    timeframe: Timeframe = "1d",
+    faixa: Range = chart_data.DEFAULT_RANGE,
 ) -> HTMLResponse:
     """One asset, with its chart.
 
@@ -418,14 +441,15 @@ def asset(
     still says something when the chart cannot draw.
     """
     now = utcnow()
+    timeframe, limit = chart_data.resolve_range(faixa)
     shell: dict[str, Any] = {
         "symbol": symbol.upper(),
-        "timeframe": timeframe,
-        "timeframes": chart_data.TIMEFRAMES,
+        "faixa": faixa,
+        "ranges": chart_data.RANGE_LABELS,
         "symbols": CHART_SYMBOLS,
     }
     try:
-        payload = chart_data.build(session, symbol, timeframe, now)
+        payload = chart_data.build(session, symbol, timeframe, now, limit)
     except (chart_data.UnknownSymbol, ValueError) as problem:
         return render(
             "ativo.html",
@@ -453,6 +477,35 @@ def asset(
         profile=payload["profile"],
         problem=None,
         **shell,
+    )
+
+
+@app.get("/api/live")
+async def live_api() -> JSONResponse:
+    """Prices as of this second, for the strip at the top of every page.
+
+    Answers from a few seconds of cache, so every open tab together costs one
+    call to the exchange. A failed attempt still answers, with the previous
+    prices, their age and the error, because a price labelled stale is useful
+    and a stale price shown as current is a trap.
+    """
+    snapshot = await live.quotes(CHART_SYMBOLS)
+    return JSONResponse(
+        {
+            "age_seconds": round(snapshot.age_seconds, 1),
+            "stale": snapshot.is_stale,
+            "error": snapshot.error,
+            "quotes": [
+                {
+                    "symbol": ticker.symbol,
+                    "last": float(ticker.last),
+                    "change_pct": float(ticker.change_pct),
+                    "high": float(ticker.high),
+                    "low": float(ticker.low),
+                }
+                for ticker in snapshot.tickers
+            ],
+        }
     )
 
 

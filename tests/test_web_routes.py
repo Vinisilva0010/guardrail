@@ -319,6 +319,9 @@ def _assert_no_silent_empty_block(html: str) -> None:
             "<article" in section
             or 'class="item"' in section
             or 'class="timeline"' in section
+            # A chart container counts as content: the route refuses to render
+            # one for a series it could not load, and prints a notice instead.
+            or 'class="chart"' in section
         ):
             continue
         assert 'class="notice' in section, f"silent empty block: {section[:120]!r}"
