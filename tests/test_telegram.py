@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from guardrail.alerts.telegram import API, MAX_CHARS, TelegramClient, TelegramError
 
-TOKEN = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
+TOKEN = "000000000:FAKE-TOKEN-FOR-TESTS-ONLY-000000"
 SEND_URL = f"{API}/bot{TOKEN}/sendMessage"
 
 

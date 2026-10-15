@@ -424,7 +424,7 @@ async def test_end_to_end_through_the_client_sends_one_request_per_alert(
     _blank(session)
     session.add_all([_event("a"), _event("b", starts_in=timedelta(hours=12))])
     session.flush()
-    token = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
+    token = "000000000:FAKE-TOKEN-FOR-TESTS-ONLY-000000"
     route = respx.post(f"{API}/bot{token}/sendMessage").mock(
         return_value=httpx.Response(200, json={"ok": True})
     )
@@ -444,7 +444,7 @@ async def test_rate_limited_delivery_keeps_the_rest_for_the_next_pass(
     _blank(session)
     session.add_all([_event("a"), _event("b", starts_in=timedelta(hours=12))])
     session.flush()
-    token = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
+    token = "000000000:FAKE-TOKEN-FOR-TESTS-ONLY-000000"
     respx.post(f"{API}/bot{token}/sendMessage").mock(
         return_value=httpx.Response(
             429, json={"ok": False, "parameters": {"retry_after": 30}}

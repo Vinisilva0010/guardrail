@@ -6,7 +6,7 @@ from structlog.testing import capture_logs
 
 from guardrail.redact import MASK, redact, redact_value, structlog_processor
 
-TELEGRAM_TOKEN = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
+TELEGRAM_TOKEN = "000000000:FAKE-TOKEN-FOR-TESTS-ONLY-000000"
 
 
 @pytest.mark.parametrize(
@@ -24,7 +24,7 @@ TELEGRAM_TOKEN = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
         ("?token=abc123&b=2", "?token=***&b=2"),
         (
             f"POST https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            "POST https://api.telegram.org/bot123456789:***/sendMessage",
+            "POST https://api.telegram.org/bot000000000:***/sendMessage",
         ),
         ("Authorization: Bearer abcdefghijklmnop1234", "Authorization: Bearer ***"),
         ("nothing sensitive here", "nothing sensitive here"),
@@ -108,7 +108,7 @@ def test_a_traceback_carrying_a_token_is_masked(
 
     out = capsys.readouterr().out
     assert "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0" not in out
-    assert "bot123456789:***" in out
+    assert "bot000000000:***" in out
 
 
 def test_capture_logs_still_sees_events() -> None:
