@@ -11,6 +11,7 @@ fractions exactly, and position sizing compounds that error.
 import enum
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -29,6 +30,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from guardrail.db.base import Base
@@ -321,3 +323,246 @@ class ApiQuota(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# --- Anticipation layer (PLANO_ANTECIPACAO §4) -------------------------------
+
+# Consensus, previous and actual values of a published event. 8 decimals covers
+# rates, index levels and token amounts alike.
+EVENT_VALUE = Numeric(28, 8)
+# Return statistics and percentage moves.
+STAT = Numeric(18, 8)
+
+
+class EventKind(enum.StrEnum):
+    """What a scheduled event is."""
+
+    RATE_DECISION = "rate_decision"
+    INFLATION_PRINT = "inflation_print"
+    JOBS_PRINT = "jobs_print"
+    GDP_PRINT = "gdp_print"
+    ACTIVITY_PRINT = "activity_print"
+    EARNINGS = "earnings"
+    TOKEN_UNLOCK = "token_unlock"
+    OPTIONS_EXPIRY = "options_expiry"
+    FUTURES_EXPIRY = "futures_expiry"
+    LOCKUP_EXPIRY = "lockup_expiry"
+    DIVIDEND_EX = "dividend_ex"
+    AUCTION = "auction"
+    CENTRAL_BANK_SPEECH = "central_bank_speech"
+    HOLIDAY = "holiday"
+    OTHER = "other"
+
+
+class EventScope(enum.StrEnum):
+    """Market an event or series belongs to."""
+
+    GLOBAL = "global"
+    US = "us"
+    BR = "br"
+    CRYPTO = "crypto"
+
+
+class EventImpact(enum.StrEnum):
+    """How much the event is expected to move markets."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+EVENT_KIND_ENUM = Enum(
+    EventKind, name="event_kind", native_enum=True, values_callable=_enum_values
+)
+EVENT_SCOPE_ENUM = Enum(
+    EventScope, name="event_scope", native_enum=True, values_callable=_enum_values
+)
+EVENT_IMPACT_ENUM = Enum(
+    EventImpact, name="event_impact", native_enum=True, values_callable=_enum_values
+)
+
+
+class ScheduledEvent(Base):
+    """An event with a known date. The core of the anticipation layer.
+
+    identity_key deliberately leaves the exact date out for company and macro
+    events: dates move (a company postpones results, a central bank reschedules)
+    and a date in the key would turn every postponement into a duplicate row.
+    The collector upserts on identity_key and updates starts_at.
+    """
+
+    __tablename__ = "scheduled_event"
+    __table_args__ = (
+        UniqueConstraint("identity_key"),
+        Index("ix_scheduled_event_starts_at", "starts_at"),
+        Index(
+            "ix_scheduled_event_instrument_id_starts_at", "instrument_id", "starts_at"
+        ),
+        Index(
+            "ix_scheduled_event_scope_impact_starts_at", "scope", "impact", "starts_at"
+        ),
+        # The key is the first 32 hex characters of a sha256.
+        CheckConstraint("identity_key ~ '^[0-9a-f]{32}$'", name="identity_key_format"),
+        # Their identity keys are built from the instrument, so a row without
+        # one could never be matched on re-collection.
+        CheckConstraint(
+            "kind NOT IN ('earnings', 'token_unlock') OR instrument_id IS NOT NULL",
+            name="instrument_required",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[EventKind] = mapped_column(EVENT_KIND_ENUM, nullable=False)
+    scope: Mapped[EventScope] = mapped_column(EVENT_SCOPE_ENUM, nullable=False)
+    instrument_id: Mapped[int | None] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # False when the source publishes only the date: starts_at then holds
+    # midnight UTC and must not be shown as an hour.
+    has_time: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    date_is_estimated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    impact: Mapped[EventImpact] = mapped_column(EVENT_IMPACT_ENUM, nullable=False)
+    expected: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    previous: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    actual: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Raw source response, kept for audit.
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    identity_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class MacroSeries(Base):
+    """A macro time series: Selic, IPCA, CPI, unemployment, yield curve."""
+
+    __tablename__ = "macro_series"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    scope: Mapped[EventScope] = mapped_column(EVENT_SCOPE_ENUM, nullable=False)
+
+
+class MacroPoint(Base):
+    """One observation of a macro series."""
+
+    __tablename__ = "macro_point"
+
+    code: Mapped[str] = mapped_column(
+        ForeignKey("macro_series.code", ondelete="CASCADE"), primary_key=True
+    )
+    ref_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    value: Mapped[Decimal] = mapped_column(EVENT_VALUE, nullable=False)
+
+
+class Expectation(Base):
+    """Market projection (BCB Focus). An expectation, not a fact.
+
+    Kept apart from macro_point on purpose: a projection stored next to the
+    realised value invites reading one as the other.
+    """
+
+    __tablename__ = "expectation"
+    __table_args__ = (
+        CheckConstraint("n_respondents >= 0", name="n_respondents_non_negative"),
+        CheckConstraint("stdev >= 0", name="stdev_non_negative"),
+        CheckConstraint("horizon_year BETWEEN 2000 AND 2100", name="horizon_year_sane"),
+    )
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    horizon_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    published_on: Mapped[date] = mapped_column(Date, primary_key=True)
+    median: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    mean: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    stdev: Mapped[Decimal | None] = mapped_column(EVENT_VALUE, nullable=True)
+    n_respondents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EventImpactStat(Base):
+    """Historical distribution of price moves around an event kind.
+
+    Recomputed every night, never written by hand. n below 8 is stored as is and
+    the screen refuses to print it as a number (PLANO §2).
+    """
+
+    __tablename__ = "event_impact_stat"
+    __table_args__ = (
+        CheckConstraint("horizon IN ('d1', 'd3', 'w1')", name="horizon_allowed"),
+        CheckConstraint("n >= 0", name="n_non_negative"),
+        CheckConstraint(
+            "pct_positive IS NULL OR pct_positive BETWEEN 0 AND 1",
+            name="pct_positive_fraction",
+        ),
+        CheckConstraint("p10 IS NULL OR p90 IS NULL OR p10 <= p90", name="p10_le_p90"),
+        CheckConstraint("window_start <= window_end", name="window_ordered"),
+    )
+
+    kind: Mapped[EventKind] = mapped_column(EVENT_KIND_ENUM, primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), primary_key=True
+    )
+    horizon: Mapped[str] = mapped_column(String(4), primary_key=True)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    median_signed: Mapped[Decimal | None] = mapped_column(STAT, nullable=True)
+    median_abs: Mapped[Decimal | None] = mapped_column(STAT, nullable=True)
+    p10: Mapped[Decimal | None] = mapped_column(STAT, nullable=True)
+    p90: Mapped[Decimal | None] = mapped_column(STAT, nullable=True)
+    pct_positive: Mapped[Decimal | None] = mapped_column(STAT, nullable=True)
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class NewsTheme(Base):
+    """A cluster of headlines about the same subject within a short window."""
+
+    __tablename__ = "news_theme"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class NewsThemeItem(Base):
+    """Membership of a headline in a theme."""
+
+    __tablename__ = "news_theme_item"
+
+    theme_id: Mapped[int] = mapped_column(
+        ForeignKey("news_theme.id", ondelete="CASCADE"), primary_key=True
+    )
+    catalyst_id: Mapped[int] = mapped_column(
+        ForeignKey("catalyst.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class NewsThemeAsset(Base):
+    """An instrument that moved together with a theme."""
+
+    __tablename__ = "news_theme_asset"
+
+    theme_id: Mapped[int] = mapped_column(
+        ForeignKey("news_theme.id", ondelete="CASCADE"), primary_key=True
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id", ondelete="CASCADE"), primary_key=True
+    )
+    move_pct: Mapped[Decimal] = mapped_column(STAT, nullable=False)
