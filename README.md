@@ -1,1 +1,1 @@
-preditor
+preditor de mercado
