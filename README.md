@@ -1,1 +1,1 @@
-preditor de mercado
+preditor de mercado Brasileiro americano
